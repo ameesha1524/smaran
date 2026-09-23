@@ -1,0 +1,203 @@
+/* ---------------------------------------------------------------------------
+   pond.css — motion for the ported pond artwork (see pondArt.ts).
+   Lifted from the design file so the koi, ducks, dragonflies and jugnus keep
+   the timings they were drawn with. Class names that clashed with the app's
+   own (.card/.lang/.stone) are prefixed `pond-`.
+--------------------------------------------------------------------------- */
+
+
+.pond-lang{color:#9aa7c7}
+.pond-lang svg{opacity:.82;transition:opacity .2s}
+.pond-lang:hover{color:#e6ebf5}.pond-lang:hover svg{opacity:1}
+.pond-lang.on{color:#ffffff}.pond-lang.on svg{opacity:1}
+.pond-lang:focus-visible,.pond-card:focus-visible,.pond-stone:focus-visible{outline:2px solid #f0c94a;outline-offset:3px}
+.pond-card:hover{background:rgba(44,62,104,.62)}
+@keyframes breathe{0%,100%{transform:scale(1);opacity:.5}50%{transform:scale(1.06);opacity:.9}}
+.pond-stone-ring{animation:breathe 5s ease-in-out infinite}
+@media (prefers-reduced-motion: reduce){.pond-stone-ring{animation:none}}
+
+/* --- koi ---------------------------------------------------------------------
+   Each fish swims one way only, head first, on its own meandering track: no
+   two share a path, a speed or a phase. They never mirror — a koi that flips
+   on the spot reads as a page turning, not a fish. Instead each one fades
+   down into the murk at the end of its run and rises again where it started,
+   which is what a carp in a shallow pond actually does. The small rotations
+   are the body following the line of travel.
+---------------------------------------------------------------------------- */
+@keyframes koiSwim1{
+  0%{transform:translate(0,0) rotate(-2deg);opacity:0}
+  7%{opacity:1}
+  22%{transform:translate(148px,-22px) rotate(-6deg)}
+  41%{transform:translate(272px,6px) rotate(4deg)}
+  63%{transform:translate(404px,-12px) rotate(-3deg)}
+  84%{transform:translate(528px,14px) rotate(5deg)}
+  93%{opacity:1}
+  100%{transform:translate(612px,2px) rotate(-1deg);opacity:0}
+}
+@keyframes koiSwim2{
+  0%{transform:translate(0,0) rotate(3deg);opacity:0}
+  6%{opacity:1}
+  19%{transform:translate(96px,18px) rotate(6deg)}
+  37%{transform:translate(214px,-9px) rotate(-5deg)}
+  52%{transform:translate(296px,-26px) rotate(-7deg)}
+  71%{transform:translate(418px,-4px) rotate(3deg)}
+  90%{transform:translate(524px,16px) rotate(6deg);opacity:1}
+  100%{transform:translate(588px,22px) rotate(2deg);opacity:0}
+}
+@keyframes koiSwim3{
+  0%{transform:translate(0,0) rotate(1deg);opacity:0}
+  9%{opacity:1}
+  26%{transform:translate(126px,-9px) rotate(-4deg)}
+  44%{transform:translate(198px,14px) rotate(7deg)}
+  59%{transform:translate(312px,20px) rotate(3deg)}
+  78%{transform:translate(436px,-6px) rotate(-6deg)}
+  91%{opacity:1}
+  100%{transform:translate(546px,-18px) rotate(-3deg);opacity:0}
+}
+.koi-1,.koi-2,.koi-3{transform-box:fill-box;transform-origin:center}
+.koi-1{animation:koiSwim1 38s linear infinite -7s}
+.koi-2{animation:koiSwim2 47s linear infinite -21s}
+.koi-3{animation:koiSwim3 33s linear infinite -13s}
+/* Tail beat: a small fish works harder than a big one. */
+.koi-1 .koi-tail{animation-duration:1.15s}
+.koi-2 .koi-tail{animation-duration:1.5s}
+.koi-3 .koi-tail{animation-duration:1.32s}
+@keyframes wag{0%,100%{transform:rotate(-9deg)}50%{transform:rotate(9deg)}}
+.koi-tail{animation:wag 1.3s ease-in-out infinite;transform-box:fill-box;transform-origin:100% 50%}
+@keyframes flyA{0%{transform:translate(0,0) rotate(0deg)}14%{transform:translate(130px,-34px) rotate(-14deg)}24%{transform:translate(134px,-36px) rotate(-8deg)}40%{transform:translate(40px,-90px) rotate(-150deg)}52%{transform:translate(36px,-92px) rotate(-160deg)}66%{transform:translate(-90px,-24px) rotate(-200deg)}80%{transform:translate(-70px,26px) rotate(-320deg)}100%{transform:translate(0,0) rotate(-360deg)}}
+@keyframes flyB{0%{transform:translate(0,0) rotate(180deg)}18%{transform:translate(-150px,20px) rotate(170deg)}28%{transform:translate(-152px,18px) rotate(176deg)}46%{transform:translate(-60px,-60px) rotate(20deg)}60%{transform:translate(-56px,-62px) rotate(10deg)}78%{transform:translate(60px,-10px) rotate(-30deg)}100%{transform:translate(0,0) rotate(-180deg)}}
+@keyframes flyC{0%{transform:translate(0,0) rotate(-30deg)}20%{transform:translate(90px,-70px) rotate(-40deg)}30%{transform:translate(92px,-72px) rotate(-60deg)}50%{transform:translate(-40px,-110px) rotate(-170deg)}62%{transform:translate(-42px,-108px) rotate(-180deg)}82%{transform:translate(-80px,-10px) rotate(-260deg)}100%{transform:translate(0,0) rotate(-390deg)}}
+.fly-a{animation:flyA 14s ease-in-out infinite;transform-box:fill-box;transform-origin:center}
+.fly-b{animation:flyB 17s ease-in-out infinite;transform-box:fill-box;transform-origin:center}
+.fly-c{animation:flyC 12s ease-in-out infinite;transform-box:fill-box;transform-origin:center}
+@keyframes flutF{0%,100%{transform:scaleY(1)}50%{transform:scaleY(0.35)}}
+@keyframes flutH{0%,100%{transform:scaleY(0.4)}50%{transform:scaleY(1)}}
+.wing-f{animation:flutF .09s linear infinite;transform-box:fill-box}
+.wing-h{animation:flutH .09s linear infinite;transform-box:fill-box}
+.wing-f.up,.wing-h.up{transform-origin:50% 100%}.wing-f.dn,.wing-h.dn{transform-origin:50% 0%}
+@keyframes jd0{0%,100%{transform:translate(0,0)}33%{transform:translate(14px,-18px)}66%{transform:translate(-10px,-8px)}}
+@keyframes jd1{0%,100%{transform:translate(0,0)}40%{transform:translate(-16px,-12px)}75%{transform:translate(8px,-22px)}}
+@keyframes jd2{0%,100%{transform:translate(0,0)}50%{transform:translate(18px,10px)}}
+@keyframes jd3{0%,100%{transform:translate(0,0)}30%{transform:translate(-8px,14px)}70%{transform:translate(12px,-10px)}}
+.jd0{animation:jd0 9s ease-in-out infinite}.jd1{animation:jd1 9s ease-in-out infinite}.jd2{animation:jd2 9s ease-in-out infinite}.jd3{animation:jd3 9s ease-in-out infinite}
+@keyframes blink{0%,100%{opacity:.15}45%{opacity:1}60%{opacity:.9}}
+.blink{animation:blink 2.6s ease-in-out infinite}
+@keyframes paddle{0%{transform:translate(0,0) scaleX(1)}45%{transform:translate(150px,0) scaleX(1)}50%{transform:translate(150px,0) scaleX(-1)}95%{transform:translate(0,0) scaleX(-1)}100%{transform:translate(0,0) scaleX(1)}}
+.flotilla{animation:paddle 44s ease-in-out infinite;transform-box:fill-box;transform-origin:81% 60%}
+@keyframes bob{0%,100%{transform:translateY(0) rotate(0deg)}50%{transform:translateY(1.6px) rotate(-3deg)}}
+.bob{animation:bob 2.2s ease-in-out infinite;transform-box:fill-box;transform-origin:50% 100%}
+@media (prefers-reduced-motion: reduce){.koi-1,.koi-2,.koi-3,.koi-tail,.fly-a,.fly-b,.fly-c,.wing-f,.wing-h,.jd0,.jd1,.jd2,.jd3,.blink,.flotilla,.bob{animation:none}}
+
+
+/* --- the scene fills the viewport and crops, never letterboxes -------------- */
+.pond-viewport {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: linear-gradient(
+    180deg,
+    #0b1430 0%,
+    #16245a 30%,
+    #1f3170 43%,
+    #1b3a2a 46%,
+    #15245a 49%,
+    #0c173c 100%
+  );
+}
+
+/* The stage is the design's own 1440x810 canvas, scaled to cover the screen.
+   Everything inside it keeps the exact position it was drawn at. */
+.pond-stage {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: 1440px;
+  height: 810px;
+  /* Cropping happens at the bottom, where the near pads are drawn to bleed —
+     never at the top, where the moon is. */
+  transform-origin: top center;
+}
+
+/* On a window wider than the scene the stage is held back so the voice hint
+   below the stone is not cut, which leaves a sliver of the gradient at each
+   side. This darkens both edges so the seam between artwork and gradient
+   reads as the far bank falling into shadow rather than as a join. */
+.pond-viewport::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 40;
+  background: linear-gradient(
+    90deg,
+    rgba(4, 8, 24, 0.55) 0,
+    rgba(4, 8, 24, 0) 110px,
+    rgba(4, 8, 24, 0) calc(100% - 110px),
+    rgba(4, 8, 24, 0.55) 100%
+  );
+}
+
+.pond-art {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: block;
+}
+
+/* Stillness, driven from app state as well as the OS setting. */
+.pond-viewport.still .koi-1,
+.pond-viewport.still .koi-2,
+.pond-viewport.still .koi-3,
+.pond-viewport.still .koi-tail,
+.pond-viewport.still .fly-a,
+.pond-viewport.still .fly-b,
+.pond-viewport.still .fly-c,
+.pond-viewport.still .wing-f,
+.pond-viewport.still .wing-h,
+.pond-viewport.still .jd0,
+.pond-viewport.still .jd1,
+.pond-viewport.still .jd2,
+.pond-viewport.still .jd3,
+.pond-viewport.still .blink,
+.pond-viewport.still .flotilla,
+.pond-viewport.still .bob,
+.pond-viewport.still .bam-sway,
+.pond-viewport.still .pond-stone-ring {
+  animation: none !important;
+}
+
+.pond-corner-sync {
+  position: absolute;
+  left: 24px;
+  bottom: 18px;
+  font-family: 'Noto Sans', sans-serif;
+  font-size: 14px;
+  color: #a9b3c9;
+}
+
+/* --- bamboo: the whole column leans from its root ---------------------------
+   Each stalk carries its own duration, delay and lean (--lean), so the grove
+   never moves in lockstep. Rotating from 50% 100% is what makes it read as a
+   plant bending rather than a wiper blade sweeping. -------------------------- */
+@keyframes bamSway {
+  0%,
+  100% {
+    transform: rotate(calc(var(--lean, 0.7deg) * -1));
+  }
+  50% {
+    transform: rotate(var(--lean, 0.7deg));
+  }
+}
+
+.bam-sway {
+  animation: bamSway 5s ease-in-out infinite;
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  will-change: transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bam-sway {
+    animation: none;
+  }
+}

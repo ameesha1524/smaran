@@ -1,0 +1,69 @@
+# Smaran — the whole system on one machine.
+#
+#   docker compose up --build
+#   → PWA            http://localhost:8081
+#   → API            http://localhost:8080
+#
+# This is the deployment-shaped stack: PostgreSQL, Redis, the Spring Boot
+# backend, and the PWA behind nginx. For day-to-day development use the dev
+# profile instead (see README) — it needs no containers at all.
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: smaran
+      POSTGRES_USER: smaran
+      # Change this before anything real. The backend refuses to start with a
+      # placeholder JWT secret; the database will not stop you.
+      POSTGRES_PASSWORD: ${SMARAN_DB_PASSWORD:-smaran}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U smaran -d smaran"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "60", "1", "--loglevel", "warning"]
+    volumes:
+      - redis-data:/data
+
+  backend:
+    build: ./backend
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      SMARAN_DB_URL: jdbc:postgresql://db:5432/smaran
+      SMARAN_DB_USER: smaran
+      SMARAN_DB_PASSWORD: ${SMARAN_DB_PASSWORD:-smaran}
+      SMARAN_REDIS_HOST: redis
+      # 32 bytes minimum. Generate with: openssl rand -base64 48
+      SMARAN_JWT_SECRET: ${SMARAN_JWT_SECRET:?set SMARAN_JWT_SECRET before starting}
+      SMARAN_CORS: http://localhost:8081
+      SMARAN_STORAGE: /app/storage
+      # Notifications degrade to log lines until these are filled in.
+      SMARAN_FCM_KEY: ${SMARAN_FCM_KEY:-}
+      SMARAN_TWILIO_SID: ${SMARAN_TWILIO_SID:-}
+      SMARAN_TWILIO_TOKEN: ${SMARAN_TWILIO_TOKEN:-}
+    ports:
+      - "8080:8080"
+    volumes:
+      # Family photographs and voice notes. Back this up — it is irreplaceable
+      # in a way the database is not.
+      - media:/app/storage
+
+  frontend:
+    build: ./frontend
+    depends_on:
+      - backend
+    ports:
+      - "8081:80"
+
+volumes:
+  db-data:
+  redis-data:
+  media:

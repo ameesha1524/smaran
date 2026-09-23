@@ -1,0 +1,126 @@
+/* Motion that belongs to the games. Same rules as the sanctuary: ease-in-out
+   only, nothing that blinks, nothing that punishes. */
+
+/* Objects crossing the water like lotus leaves on a current. */
+@keyframes driftAcross {
+  0% {
+    transform: translateX(-14vw) translateY(0) rotate(-3deg);
+  }
+  50% {
+    transform: translateX(45vw) translateY(-12px) rotate(2deg);
+  }
+  100% {
+    transform: translateX(104vw) translateY(4px) rotate(-2deg);
+  }
+}
+
+@keyframes driftBack {
+  0% {
+    transform: translateX(104vw) translateY(0) rotate(3deg);
+  }
+  50% {
+    transform: translateX(45vw) translateY(10px) rotate(-2deg);
+  }
+  100% {
+    transform: translateX(-14vw) translateY(-4px) rotate(2deg);
+  }
+}
+
+.drifter {
+  position: absolute;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+  will-change: transform;
+}
+
+/* A drifter that has been found: it stops, opens, and stays open. */
+.drifter[data-found='true'] {
+  animation-play-state: paused;
+}
+
+/* The gentlest possible "not that one": the card returns to where it was.
+   No shake, no flash, no red, no sound. */
+@keyframes returnHome {
+  0% {
+    transform: translate(var(--dx, 0), var(--dy, 0)) scale(1.04);
+  }
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+}
+
+.returning {
+  animation: returnHome 900ms ease-in-out both;
+}
+
+/* Family Grove: a fruit node acknowledging that it was found. */
+@keyframes fruitBounce {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+  }
+  40% {
+    transform: translateY(-10px) scale(1.08);
+  }
+  70% {
+    transform: translateY(-3px) scale(1.02);
+  }
+}
+
+.fruit-found {
+  animation: fruitBounce 1.8s ease-in-out;
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+}
+
+/* Morning Rituals: the sun climbing as the order comes together. */
+.sun-climb {
+  transition: transform 2.4s ease-in-out, opacity 2.4s ease-in-out;
+}
+
+/* A slot waiting for something. Breathing, not blinking. */
+@keyframes slotWait {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 0.65;
+  }
+}
+
+.slot-waiting {
+  animation: slotWait 4s ease-in-out infinite;
+}
+
+/* The voice strip in Family Grove, while a voice note is playing. */
+@keyframes voiceWave {
+  0%,
+  100% {
+    transform: scaleY(0.4);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+
+.voice-bar {
+  animation: voiceWave 1.4s ease-in-out infinite;
+  transform-origin: 50% 50%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .drifter,
+  .returning,
+  .fruit-found,
+  .slot-waiting,
+  .voice-bar {
+    animation: none !important;
+  }
+
+  /* Without motion the objects simply sit on the water, evenly spaced. */
+  .drifter {
+    position: relative;
+    transform: none !important;
+  }
+}

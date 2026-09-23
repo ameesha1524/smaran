@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Placeholder JasperReports template for the doctor-facing cognitive trend
+  report.
+
+  The report is currently rendered by ReportService with OpenPDF, which keeps a
+  reporting engine out of the container image while the content settles. This
+  file records the intended Jasper structure so the swap is mechanical: the
+  fields below are exactly the fields ReportService reads off
+  Dto.DashboardSummary, in the same order as the printed page.
+
+  When moving to Jasper:
+    1. fill in the <detail> bands from the field list below
+    2. compile to .jasper in the build
+    3. replace ReportService.render with a JasperFillManager call
+  The disclaimer band is not optional and its wording is fixed — see
+  ReportService for why.
+-->
+<jasperReport xmlns="http://jasperreports.sourceforge.net/jasperreports"
+              name="cognitive-trend" pageWidth="595" pageHeight="842"
+              columnWidth="487" leftMargin="54" rightMargin="54"
+              topMargin="54" bottomMargin="54">
+
+  <parameter name="patientName" class="java.lang.String"/>
+  <parameter name="region" class="java.lang.String"/>
+  <parameter name="kinshipTerm" class="java.lang.String"/>
+  <parameter name="generatedAt" class="java.lang.String"/>
+  <parameter name="sessionsThisWeek" class="java.lang.Long"/>
+  <parameter name="bloomStage" class="java.lang.Integer"/>
+  <parameter name="bloomCount" class="java.lang.Integer"/>
+
+  <field name="date" class="java.lang.String"/>
+  <field name="language" class="java.lang.Double"/>
+  <field name="visualSemantic" class="java.lang.Double"/>
+  <field name="motor" class="java.lang.Double"/>
+  <field name="affective" class="java.lang.Double"/>
+  <field name="temporal" class="java.lang.Double"/>
+
+  <title>
+    <band height="60"/>
+  </title>
+
+  <detail>
+    <band height="20"/>
+  </detail>
+
+  <summary>
+    <band height="80"/>
+  </summary>
+</jasperReport>

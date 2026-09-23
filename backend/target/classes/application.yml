@@ -1,0 +1,119 @@
+spring:
+  application:
+    name: smaran
+
+  # PostgreSQL in every environment that holds a real person's data.
+  datasource:
+    url: ${SMARAN_DB_URL:jdbc:postgresql://localhost:5432/smaran}
+    username: ${SMARAN_DB_USER:smaran}
+    password: ${SMARAN_DB_PASSWORD:smaran}
+
+  jpa:
+    hibernate:
+      # `validate` in production: schema changes go through a migration, never
+      # through a restart of the application server.
+      ddl-auto: ${SMARAN_DDL:update}
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+
+  data:
+    redis:
+      host: ${SMARAN_REDIS_HOST:localhost}
+      port: ${SMARAN_REDIS_PORT:6379}
+      # Redis caches session state and real-time garden events. Its absence
+      # degrades latency, never correctness — nothing is stored only there.
+
+  servlet:
+    multipart:
+      # A photograph and five seconds of audio. Nothing here needs more.
+      max-file-size: 12MB
+      max-request-size: 24MB
+
+server:
+  port: ${SMARAN_PORT:8080}
+  compression:
+    enabled: true
+
+smaran:
+  security:
+    # MUST be overridden in every deployment. The application refuses to start
+    # with the placeholder when SPRING_PROFILES_ACTIVE is not `dev`.
+    jwt-secret: ${SMARAN_JWT_SECRET:change-me-change-me-change-me-change-me-32b}
+    access-ttl-minutes: 15
+    refresh-ttl-days: 7
+    open-demo: false
+
+  cors:
+    allowed-origins: ${SMARAN_CORS:http://localhost:5173}
+
+  storage:
+    # Swap for an S3 client in a deployment; the key format does not change.
+    dir: ${SMARAN_STORAGE:./storage}
+
+  garden:
+    # 02:05 nightly: put yesterday's quiet gardens to sleep, and tell a caregiver
+    # only after three consecutive days.
+    rest-sweep-cron: "0 5 2 * * *"
+
+  reminders:
+    cron: "0 * * * * *"
+
+  notifications:
+    fcm-key: ${SMARAN_FCM_KEY:}
+    twilio-sid: ${SMARAN_TWILIO_SID:}
+    twilio-token: ${SMARAN_TWILIO_TOKEN:}
+
+logging:
+  level:
+    org.smaran: INFO
+    # Never log request bodies: they carry mood, voice features and family names.
+    org.springframework.web: WARN
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+
+---
+# ---------------------------------------------------------------------------
+# dev — a laptop with nothing installed. H2 in memory, no Redis needed, demo
+# data seeded, and the API open so the PWA runs without accounts.
+# Never point this profile at a real person's data.
+# ---------------------------------------------------------------------------
+spring:
+  config:
+    activate:
+      on-profile: dev
+
+  datasource:
+    url: jdbc:h2:mem:smaran;DB_CLOSE_DELAY=-1;MODE=PostgreSQL
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
+
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
+      - org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration
+
+smaran:
+  security:
+    jwt-secret: dev-only-secret-dev-only-secret-dev-only-32
+    open-demo: true
+  cors:
+    allowed-origins: http://localhost:5173,http://localhost:4173
+
+logging:
+  level:
+    org.smaran: DEBUG

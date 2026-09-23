@@ -1,0 +1,234 @@
+/* ---------------------------------------------------------------------------
+   pixelPond.css — the pixel-art pond.
+
+   Every animation here steps rather than eases. `steps(n)` is what keeps the
+   movement on the pixel grid: a koi that slides smoothly through fractional
+   pixels turns to mush at this scale, because the browser antialiases it and
+   the hard edges the art is made of disappear. Stepping also gives the whole
+   scene the 8-bit cadence the style depends on.
+--------------------------------------------------------------------------- */
+
+/* --- the stage ------------------------------------------------------------ */
+.px-viewport {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: #0a1330;
+}
+
+/* The scene is drawn at 1440x810 and never reflowed; the whole stage scales
+   as one piece so the interface stays welded to the artwork. */
+.px-stage {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: 1440px;
+  height: 810px;
+  transform-origin: top center;
+}
+
+/* image-rendering: pixelated is the single most important line in this file.
+   Without it the browser smooths the 360x203 source as it blows it up to
+   1440x812 and the art stops being pixel art. */
+.px-art {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1440px;
+  height: 812px;
+  image-rendering: pixelated;
+  display: block;
+}
+
+.px-overlay {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: block;
+}
+
+/* --- koi ------------------------------------------------------------------
+   Two frames per fish, swapped on a hard step: that two-frame flutter is the
+   tail beating. The body glides on its own slower step track. -------------- */
+@keyframes pxSwimA {
+  0%   { transform: translate(0, 0); }
+  50%  { transform: translate(48px, -4px); }
+  100% { transform: translate(0, 0); }
+}
+@keyframes pxSwimB {
+  0%   { transform: translate(0, 0); }
+  50%  { transform: translate(40px, 2px); }
+  100% { transform: translate(0, 0); }
+}
+.px-swim-a { animation: pxSwimA 22s steps(48) infinite; }
+.px-swim-b { animation: pxSwimB 26s steps(40) infinite; }
+
+/* Two-frame cels. `fa`/`fb` are the slow pair (fins), `wa`/`wb` the fast pair
+   (dragonfly wings) — same trick, different tempo. */
+@keyframes pxFrameA { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+@keyframes pxFrameB { 0%, 49% { opacity: 0; } 50%, 100% { opacity: 1; } }
+.px-fa { animation: pxFrameA 0.8s steps(1) infinite; }
+.px-fb { animation: pxFrameB 0.8s steps(1) infinite; }
+.px-wa { animation: pxFrameA 0.16s steps(1) infinite; }
+.px-wb { animation: pxFrameB 0.16s steps(1) infinite; }
+
+/* --- ducks ---------------------------------------------------------------- */
+@keyframes pxPaddle {
+  0%, 100% { transform: translate(0, 0); }
+  50%      { transform: translate(8px, 0); }
+}
+.px-paddle { animation: pxPaddle 12s steps(8) infinite; }
+
+/* A single pixel of vertical bob. More than one and they look like they are
+   drowning rather than floating. */
+@keyframes pxBob {
+  0%, 49%   { transform: translate(0, 0); }
+  50%, 100% { transform: translate(0, 1px); }
+}
+.px-bob { animation: pxBob 1.4s steps(1) infinite; }
+
+/* --- dragonflies ----------------------------------------------------------
+   Each one darts, holds, darts again. The held frames are what make it read
+   as an insect deciding where to go next. ---------------------------------- */
+@keyframes pxFlyA {
+  0%   { transform: translate(0, 0); }
+  20%  { transform: translate(30px, -8px); }
+  30%  { transform: translate(30px, -8px); }
+  55%  { transform: translate(10px, -22px); }
+  70%  { transform: translate(-14px, -6px); }
+  85%  { transform: translate(-14px, -6px); }
+  100% { transform: translate(0, 0); }
+}
+@keyframes pxFlyB {
+  0%   { transform: translate(0, 0); }
+  25%  { transform: translate(-36px, 6px); }
+  35%  { transform: translate(-36px, 6px); }
+  60%  { transform: translate(-16px, -14px); }
+  100% { transform: translate(0, 0); }
+}
+@keyframes pxFlyC {
+  0%   { transform: translate(0, 0); }
+  30%  { transform: translate(24px, -16px); }
+  45%  { transform: translate(24px, -16px); }
+  75%  { transform: translate(-8px, -24px); }
+  100% { transform: translate(0, 0); }
+}
+.px-fly-a { animation: pxFlyA 12s steps(36) infinite; }
+.px-fly-b { animation: pxFlyB 15s steps(40) infinite; }
+.px-fly-c { animation: pxFlyC 10s steps(30) infinite; }
+
+/* --- jugnus (fireflies) ---------------------------------------------------
+   Three wander tracks and a separate blink, deliberately given co-prime-ish
+   durations per firefly inline, so the swarm never pulses together. -------- */
+@keyframes pxDrift0 {
+  0%, 100% { transform: translate(0, 0); }
+  33%      { transform: translate(3px, -4px); }
+  66%      { transform: translate(-2px, -2px); }
+}
+@keyframes pxDrift1 {
+  0%, 100% { transform: translate(0, 0); }
+  50%      { transform: translate(-4px, -3px); }
+}
+@keyframes pxDrift2 {
+  0%, 100% { transform: translate(0, 0); }
+  40%      { transform: translate(4px, 2px); }
+  80%      { transform: translate(1px, -3px); }
+}
+.px-drift-0 { animation: pxDrift0 8s steps(8) infinite; }
+.px-drift-1 { animation: pxDrift1 7s steps(6) infinite; }
+.px-drift-2 { animation: pxDrift2 9s steps(8) infinite; }
+
+@keyframes pxBlink {
+  0%, 40%  { opacity: 0.15; }
+  50%, 90% { opacity: 1; }
+  100%     { opacity: 0.15; }
+}
+.px-blink { animation: pxBlink 2.4s steps(3) infinite; }
+
+/* --- water glints --------------------------------------------------------- */
+@keyframes pxGlint {
+  0%, 60%  { opacity: 0; }
+  70%, 90% { opacity: 0.9; }
+  100%     { opacity: 0; }
+}
+.px-glint { animation: pxGlint 3s steps(1) infinite; }
+
+/* --- interface ------------------------------------------------------------ */
+.px-lang {
+  color: #aab5d2;
+}
+.px-lang span {
+  text-shadow: 2px 2px 0 #070d26;
+}
+.px-lang svg { opacity: 0.85; }
+.px-lang:hover { color: #ffffff; }
+.px-lang:hover svg { opacity: 1; }
+.px-lang.on { color: #ffffff; }
+.px-lang.on svg { opacity: 1; }
+
+.px-lang:focus-visible,
+.px-card:focus-visible,
+.px-stone:focus-visible {
+  outline: 4px solid #f0c94a;
+  outline-offset: 4px;
+}
+
+.px-card:hover { background: #1c2a60; }
+
+/* The stone sinks into its own drop shadow when pressed — the pixel-art way
+   of saying a button went down. */
+.px-stone:active { transform: translateY(4px); }
+
+@keyframes pxRing {
+  0%, 100% { opacity: 0.35; }
+  50%      { opacity: 0.9; }
+}
+.px-stone-ring { animation: pxRing 4s steps(2) infinite; }
+
+/* --- stillness, from the OS setting and from app state -------------------- */
+@media (prefers-reduced-motion: reduce) {
+  .px-swim-a, .px-swim-b, .px-fa, .px-fb, .px-wa, .px-wb,
+  .px-paddle, .px-bob, .px-fly-a, .px-fly-b, .px-fly-c,
+  .px-drift-0, .px-drift-1, .px-drift-2,
+  .px-blink, .px-glint, .px-stone-ring {
+    animation: none;
+  }
+  /* The B cel of every two-frame pair is hidden, leaving a clean still. */
+  .px-fb, .px-wb { opacity: 0; }
+}
+
+.px-viewport.still .px-swim-a,
+.px-viewport.still .px-swim-b,
+.px-viewport.still .px-fa,
+.px-viewport.still .px-fb,
+.px-viewport.still .px-wa,
+.px-viewport.still .px-wb,
+.px-viewport.still .px-paddle,
+.px-viewport.still .px-bob,
+.px-viewport.still .px-fly-a,
+.px-viewport.still .px-fly-b,
+.px-viewport.still .px-fly-c,
+.px-viewport.still .px-drift-0,
+.px-viewport.still .px-drift-1,
+.px-viewport.still .px-drift-2,
+.px-viewport.still .px-blink,
+.px-viewport.still .px-glint,
+.px-viewport.still .px-stone-ring {
+  animation: none !important;
+}
+.px-viewport.still .px-fb,
+.px-viewport.still .px-wb { opacity: 0; }
+
+/* The sync indicator sits on the screen, not the stage, so it survives a crop
+   on unusually wide windows. */
+.px-corner-sync {
+  position: absolute;
+  left: 24px;
+  bottom: 18px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: 'VT323', monospace;
+  font-size: 22px;
+  color: #a9b3c9;
+}
