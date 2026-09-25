@@ -189,6 +189,76 @@ export function listenOnce(language: LanguageCode, onIntent: (intent: VoiceInten
   }
 }
 
+/**
+ * Open dictation, for the journal.
+ *
+ * Unlike `listenOnce` this holds the microphone open and streams text back as
+ * it arrives, because a person telling you about their day pauses — often for
+ * several seconds — and a recogniser that closed on the first silence would
+ * cut them off mid-thought. Chrome ends a continuous session on its own
+ * anyway, so `onend` restarts it until the caller stops.
+ *
+ * `onText` receives the settled transcript so far plus whatever is currently
+ * being guessed at, so the screen can show words appearing as they are spoken.
+ */
+export function dictate(
+  language: LanguageCode,
+  onText: (settled: string, interim: string) => void,
+  onUnsupported?: () => void,
+): () => void {
+  const Ctor = recognitionCtor()
+  if (!Ctor) {
+    onUnsupported?.()
+    return () => undefined
+  }
+  const rec = new Ctor()
+  rec.lang = getPack(language).speechLocale
+  rec.continuous = true
+  rec.interimResults = true
+  rec.maxAlternatives = 1
+
+  let settled = ''
+  let stopped = false
+
+  rec.onresult = (e) => {
+    // `isFinal` is not in the minimal shape above, so read it defensively:
+    // a result without it is treated as interim, which is the safe default.
+    let interim = ''
+    const results = e.results as ArrayLike<ArrayLike<{ transcript: string }> & { isFinal?: boolean }>
+    for (let i = 0; i < results.length; i++) {
+      const r = results[i]
+      const text = r?.[0]?.transcript ?? ''
+      if (r?.isFinal) settled += text
+      else interim += text
+    }
+    onText(settled, interim)
+  }
+  rec.onerror = () => undefined
+  rec.onend = () => {
+    if (stopped) return
+    try {
+      rec.start()
+    } catch {
+      /* the browser will not restart it; the caller still has what was said */
+    }
+  }
+
+  try {
+    rec.start()
+  } catch {
+    onUnsupported?.()
+  }
+
+  return () => {
+    stopped = true
+    try {
+      rec.stop()
+    } catch {
+      /* already stopped */
+    }
+  }
+}
+
 /** Deliberately forgiving keyword matching — a dementia patient rephrases. */
 export function parseIntent(raw: string): VoiceIntent {
   const s = raw.toLowerCase().trim()

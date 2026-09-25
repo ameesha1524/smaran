@@ -109,12 +109,176 @@
   transform-origin: 50% 50%;
 }
 
+/* Duck Roll Call. Prefixed drc- throughout — .bob, .halo, .hint, .shake are
+   common enough names that reusing them bare risked colliding with whatever
+   else this stylesheet ends up sharing a bundle with. */
+
+/* The ready / another-round button, exactly as the reference draws it: a gold
+   slab with a dark border ring and a hard offset shadow, which the press
+   collapses into the ring. */
+.drc-btn {
+  font-family: 'Pixelify Sans', sans-serif;
+  font-size: 34px;
+  color: #1a1530;
+  background: #f0c94a;
+  border: 0;
+  border-radius: 0;
+  padding: 0 36px;
+  cursor: pointer;
+  box-shadow: 0 0 0 6px #2b2440, 10px 10px 0 6px #070d26;
+}
+
+.drc-btn:hover {
+  background: #ffd966;
+}
+
+.drc-btn:active {
+  transform: translate(10px, 10px);
+  box-shadow: 0 0 0 6px #2b2440;
+}
+
+.drc-btn:focus-visible,
+.drc-duck:focus-visible {
+  outline: 6px solid #fff2a0;
+  outline-offset: 6px;
+}
+
+/* Where the reference puts its "back to the pond" link, always present here
+   because a patient who wants to stop should never have to finish first. */
+.drc-back {
+  position: absolute;
+  right: 30px;
+  top: 750px;
+  background: none;
+  border: 0;
+  padding: 0;
+  font-family: 'VT323', monospace;
+  font-size: 30px;
+  color: #c4cce0;
+  text-decoration: underline;
+  text-underline-offset: 5px;
+  text-shadow: 2px 2px 0 #070d26;
+  cursor: pointer;
+}
+
+.drc-back:hover {
+  color: #ffffff;
+}
+
+@keyframes drcBob {
+  0%,
+  49% {
+    transform: translateY(0);
+  }
+  50%,
+  100% {
+    transform: translateY(10px);
+  }
+}
+
+.drc-bob {
+  animation: drcBob 1.6s steps(1) infinite;
+}
+
+@keyframes drcShake {
+  0% {
+    transform: translateX(0);
+  }
+  20% {
+    transform: translateX(-10px);
+  }
+  40% {
+    transform: translateX(10px);
+  }
+  60% {
+    transform: translateX(-10px);
+  }
+  80% {
+    transform: translateX(10px);
+  }
+  100% {
+    transform: translateX(0);
+  }
+}
+
+.drc-shake {
+  animation: drcShake 0.5s steps(1, end) 1;
+}
+
+@keyframes drcHalo {
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0.8;
+  }
+}
+
+.drc-halo {
+  animation: drcHalo 1.2s steps(1) infinite;
+}
+
+/* A nudge, never an instruction — the errorless-mode hint on the one correct
+   duckling, barely brighter than resting. */
+@keyframes drcHint {
+  0%,
+  49% {
+    opacity: 0.25;
+  }
+  50%,
+  100% {
+    opacity: 0.6;
+  }
+}
+
+.drc-hint {
+  animation: drcHint 2.4s steps(1) infinite;
+}
+
+@keyframes drcFly {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  50% {
+    transform: translate(20px, -10px);
+  }
+}
+
+.drc-fly {
+  display: inline-block;
+  animation: drcFly 6s steps(2) infinite;
+}
+
+@keyframes drcBlink {
+  0%,
+  49% {
+    opacity: 0.2;
+  }
+  50%,
+  100% {
+    opacity: 1;
+  }
+}
+
+.drc-blink {
+  animation: drcBlink 2.2s steps(1) infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .drifter,
   .returning,
   .fruit-found,
   .slot-waiting,
-  .voice-bar {
+  .voice-bar,
+  .drc-bob,
+  .drc-shake,
+  .drc-halo,
+  .drc-hint,
+  .drc-fly,
+  .drc-blink {
     animation: none !important;
   }
 
@@ -123,4 +287,14 @@
     position: relative;
     transform: none !important;
   }
+}
+
+/* The app's own "stillness" toggle — same idea as prefers-reduced-motion,
+   set from inside the app rather than the OS, so it composes with it. */
+.px-viewport.still .drc-bob,
+.px-viewport.still .drc-halo,
+.px-viewport.still .drc-hint,
+.px-viewport.still .drc-fly,
+.px-viewport.still .drc-blink {
+  animation: none !important;
 }

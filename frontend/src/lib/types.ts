@@ -5,7 +5,12 @@
 
 export type LanguageCode = 'en' | 'as' | 'mni' | 'lus' | 'hi' | 'nag' | (string & {})
 
-export type GameType = 'WEAVERS_LOOM' | 'GRANDMOTHERS_TALE' | 'FAMILY_GROVE' | 'MORNING_RITUALS'
+export type GameType =
+  | 'DUCK_ROLL_CALL'
+  | 'GRANDMOTHERS_TALE'
+  | 'FAMILY_GROVE'
+  | 'MORNING_RITUALS'
+  | 'LOTUS_FROG'
 
 export type MotorTier = 'FLUID' | 'MODERATE' | 'SUPPORTED'
 
@@ -51,6 +56,12 @@ export interface DomainScores {
   motor: number
   affective: number
   temporal: number
+  /**
+   * Domain 6 — Executive Function & Working Memory. Covers visuospatial
+   * working memory span (read by Duck Roll Call) and, longer-term, cognitive
+   * flexibility / set-shifting (a separate task-switching game, not yet built).
+   */
+  executiveFunction: number
 }
 
 export interface CognitiveProfile {
@@ -169,13 +180,57 @@ export interface SessionResultDraft {
   objectResults?: CognitiveObjectResult[]
 }
 
+/**
+ * What the model reads back out of a journal entry.
+ *
+ * Deliberately not a diagnosis. Valence and arousal are dimensions a caregiver
+ * can watch drift over weeks; `concernFlags` is the only part that ever raises
+ * anything, and it raises it to the caregiver, never to the patient.
+ */
+export interface SentimentSignals {
+  /** -1 bleak · 0 even · 1 bright. */
+  valence: number
+  /** 0 settled · 1 agitated. */
+  arousal: number
+  /** Recurring subjects in her own words — "the garden", "my son". */
+  themes: string[]
+  concernFlags: ('CONFUSION' | 'DISTRESS' | 'LONELINESS' | 'PAIN')[]
+  /** One warm sentence, written for the caregiver's eyes. */
+  summary: string
+}
+
+export interface JournalEntry {
+  id: string
+  text: string
+  timestamp: number
+  /** Null while the analysis is in flight, or if it failed — the entry still stands. */
+  sentimentSignals: SentimentSignals | null
+}
+
+export interface VoiceNote {
+  id: string
+  audioUrl: string
+  timestamp: number
+  listened: boolean
+  /** Who left it, in the word she knows them by. */
+  fromKinshipTerm?: string
+}
+
 export interface DashboardSummary {
   patient: Patient
   garden: GardenState
   sessionsThisWeek: number
   lastActive: string | null
   moodTrend: { date: string; mood: MoodKey }[]
-  domainTrend: { date: string; language: number; visualSemantic: number; motor: number; affective: number; temporal: number }[]
+  domainTrend: {
+    date: string
+    language: number
+    visualSemantic: number
+    motor: number
+    affective: number
+    temporal: number
+    executiveFunction: number
+  }[]
   heatmap: { date: string; minutes: number }[]
   perGame: { gameType: GameType; sessions: number; avgScore: number; trend: 'UP' | 'FLAT' | 'DOWN' }[]
   familyPhases: { id: string; name: string; phase: GrovePhase }[]

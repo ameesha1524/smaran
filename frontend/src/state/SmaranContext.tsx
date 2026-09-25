@@ -3,10 +3,14 @@ import type {
   CognitiveProfile,
   GameRoute,
   GardenState,
+  JournalEntry,
   LanguageCode,
   MoodKey,
+  MotorTier,
   Patient,
+  SentimentSignals,
   SessionResultDraft,
+  VoiceNote,
 } from '../lib/types'
 import { cacheGet, cacheSet, queueDepth } from '../lib/db'
 import {
@@ -43,27 +47,36 @@ interface SmaranState {
   online: boolean
   pending: number
   syncedAt: number | null
-  /** True until the first mood tap — the gesture that also unlocks audio. */
-  needsCheckIn: boolean
-  onboarded: boolean
-  /** Has anyone told this device who is sitting at the pond? */
-  registered: boolean
-  /** Has a language flower been chosen on this device? Asked once, ever. */
-  languageChosen: boolean
+  /**
+   * The hand, as the profile currently reads it. Sized tap targets and the
+   * journal's default input mode both hang off this.
+   */
+  motorTier: MotorTier
+  /** Has a caregiver ever set this device up? Nothing patient-facing runs before this. */
+  caregiverSetupComplete: boolean
+  /** Has she confirmed the caregiver's language choice? Asked once, ever. */
+  languageConfirmed: boolean
+  /** Completed sessions. The first two are the onboarding, silently. */
+  sessionCount: number
+  journalEntries: JournalEntry[]
+  caregiverVoiceNotes: VoiceNote[]
   stillness: boolean
 }
 
 interface SmaranActions {
   setLanguage(code: LanguageCode): void
+  /** Softly, from the pond overlay or the journal — never a gate. */
   checkIn(mood: MoodKey): Promise<void>
   /** Finish a game: water the garden, update the profile, queue or post. */
   completeSession(result: SessionResultDraft): Promise<{ milestone: boolean }>
   setProfile(profile: CognitiveProfile): void
   setPatient(patch: Partial<Patient>): void
-  /** The one thing the login screen does: give the pond a name to greet. */
-  register(name: string, kinshipTerm: string): void
-  /** First-launch flower pick. Sets the language and retires the question. */
-  chooseLanguage(code: LanguageCode): void
+  /** The caregiver hands the device over. Opens the patient side for the first time. */
+  completeCaregiverSetup(): void
+  /** She confirms the language she is greeted in. Never unset afterwards. */
+  confirmLanguage(code: LanguageCode): void
+  addJournalEntry(text: string, signals: SentimentSignals | null): JournalEntry
+  markVoiceNoteListened(id: string): void
   setStillness(v: boolean): void
   sync(): Promise<void>
 }
@@ -81,13 +94,35 @@ export function useSmaran(): Ctx {
 const PATIENT_KEY = 'patient'
 const PROFILE_KEY = 'profile'
 const MOOD_KEY = 'mood.today'
-const ONBOARDED_KEY = 'smaran.onboarded'
-const REGISTERED_KEY = 'smaran.registered'
-const LANG_CHOSEN_KEY = 'smaran.languageChosen'
+const SETUP_KEY = 'smaran.caregiverSetupComplete'
+const LANG_CONFIRMED_KEY = 'smaran.languageConfirmed'
+const SESSION_COUNT_KEY = 'smaran.sessionCount'
+const JOURNAL_KEY = 'smaran.journal'
+const VOICE_NOTES_KEY = 'smaran.voiceNotes'
 const STILL_KEY = 'smaran.stillness'
 
 function todayKey(): string {
   return new Date().toISOString().slice(0, 10)
+}
+
+/** localStorage is a shared surface and can hold anything; never trust its shape. */
+function readList<T>(key: string): T[] {
+  try {
+    const raw = localStorage.getItem(key)
+    if (!raw) return []
+    const parsed: unknown = JSON.parse(raw)
+    return Array.isArray(parsed) ? (parsed as T[]) : []
+  } catch {
+    return []
+  }
+}
+
+function writeList<T>(key: string, list: T[]): void {
+  try {
+    localStorage.setItem(key, JSON.stringify(list))
+  } catch {
+    // A full or blocked store must not take the pond down with it.
+  }
 }
 
 export function SmaranProvider({ children }: { children: ReactNode }) {
@@ -99,9 +134,22 @@ export function SmaranProvider({ children }: { children: ReactNode }) {
   const [online, setOnline] = useState<boolean>(() => navigator.onLine)
   const [pending, setPending] = useState(0)
   const [syncedAt, setSyncedAt] = useState<number | null>(null)
-  const [onboarded, setOnboarded] = useState(() => localStorage.getItem(ONBOARDED_KEY) === 'true')
-  const [registered, setRegistered] = useState(() => localStorage.getItem(REGISTERED_KEY) === 'true')
-  const [languageChosen, setLanguageChosen] = useState(() => localStorage.getItem(LANG_CHOSEN_KEY) === 'true')
+  const [caregiverSetupComplete, setCaregiverSetupComplete] = useState(
+    () => localStorage.getItem(SETUP_KEY) === 'true',
+  )
+  const [languageConfirmed, setLanguageConfirmed] = useState(
+    () => localStorage.getItem(LANG_CONFIRMED_KEY) === 'true',
+  )
+  const [sessionCount, setSessionCount] = useState(() => {
+    const n = Number(localStorage.getItem(SESSION_COUNT_KEY))
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0
+  })
+  const [journalEntries, setJournalEntries] = useState<JournalEntry[]>(() =>
+    readList<JournalEntry>(JOURNAL_KEY),
+  )
+  const [caregiverVoiceNotes, setCaregiverVoiceNotes] = useState<VoiceNote[]>(() =>
+    readList<VoiceNote>(VOICE_NOTES_KEY),
+  )
   const [stillness, setStillnessState] = useState(() => localStorage.getItem(STILL_KEY) === 'true')
   const ambientStarted = useRef(false)
 
@@ -170,9 +218,11 @@ export function SmaranProvider({ children }: { children: ReactNode }) {
 
   /* ------------------------------------------------------------ route */
 
+  // sessionCount is part of the route because the first two sessions *are* the
+  // onboarding: fixed games, fixed difficulty, no screen sat through.
   const route: GameRoute = useMemo(
-    () => deriveGameRoute({ profile, moodToday }),
-    [profile, moodToday],
+    () => deriveGameRoute({ profile, moodToday, sessionCount }),
+    [profile, moodToday, sessionCount],
   )
 
   // The tap target is global: one number, set by the hand, honoured everywhere.
@@ -216,9 +266,15 @@ export function SmaranProvider({ children }: { children: ReactNode }) {
       setGardenState(outcome.next)
       await cacheSet(`garden:${patient.id}`, outcome.next)
 
+      // updateProfile returns the *same* object for games that own their
+      // profile update (the Lotus Frog folds in four domains itself, before
+      // calling this). Writing it back regardless would overwrite that richer
+      // reading with whatever this closure captured.
       const nextProfile = updateProfile(profile, result)
-      setProfileState(nextProfile)
-      await cacheSet(PROFILE_KEY, nextProfile)
+      if (nextProfile !== profile) {
+        setProfileState(nextProfile)
+        await cacheSet(PROFILE_KEY, nextProfile)
+      }
 
       const { queued } = await submitSession({
         patientId: patient.id,
@@ -236,6 +292,12 @@ export function SmaranProvider({ children }: { children: ReactNode }) {
       void gardenApi.water(patient.id, result.gameType)
       if (queued) setPending(await queueDepth())
 
+      setSessionCount((n) => {
+        const next = n + 1
+        localStorage.setItem(SESSION_COUNT_KEY, String(next))
+        return next
+      })
+
       cue(outcome.milestone ? 'bloom' : 'petal')
       return { milestone: outcome.milestone }
     },
@@ -245,8 +307,6 @@ export function SmaranProvider({ children }: { children: ReactNode }) {
   const setProfile = useCallback((p: CognitiveProfile) => {
     setProfileState(p)
     void cacheSet(PROFILE_KEY, p)
-    localStorage.setItem(ONBOARDED_KEY, 'true')
-    setOnboarded(true)
   }, [])
 
   const setPatient = useCallback(
@@ -260,21 +320,39 @@ export function SmaranProvider({ children }: { children: ReactNode }) {
     [patient],
   )
 
-  const chooseLanguage = useCallback(
+  const confirmLanguage = useCallback(
     (code: LanguageCode) => {
-      localStorage.setItem(LANG_CHOSEN_KEY, 'true')
-      setLanguageChosen(true)
+      localStorage.setItem(LANG_CONFIRMED_KEY, 'true')
+      setLanguageConfirmed(true)
       setLanguage(code)
     },
     [setLanguage],
   )
 
-  const register = useCallback((name: string, kinshipTerm: string) => {
-    localStorage.setItem(REGISTERED_KEY, 'true')
-    setRegistered(true)
-    setPatientState((prev) => {
-      const next = { ...prev, name, kinshipTerm }
-      void cacheSet(PATIENT_KEY, next)
+  const completeCaregiverSetup = useCallback(() => {
+    localStorage.setItem(SETUP_KEY, 'true')
+    setCaregiverSetupComplete(true)
+  }, [])
+
+  const addJournalEntry = useCallback((text: string, signals: SentimentSignals | null): JournalEntry => {
+    const entry: JournalEntry = {
+      id: crypto.randomUUID(),
+      text,
+      timestamp: Date.now(),
+      sentimentSignals: signals,
+    }
+    setJournalEntries((prev) => {
+      const next = [...prev, entry]
+      writeList(JOURNAL_KEY, next)
+      return next
+    })
+    return entry
+  }, [])
+
+  const markVoiceNoteListened = useCallback((id: string) => {
+    setCaregiverVoiceNotes((prev) => {
+      const next = prev.map((n) => (n.id === id ? { ...n, listened: true } : n))
+      writeList(VOICE_NOTES_KEY, next)
       return next
     })
   }, [])
@@ -341,18 +419,22 @@ export function SmaranProvider({ children }: { children: ReactNode }) {
     online,
     pending,
     syncedAt,
-    needsCheckIn: moodToday === null,
-    onboarded,
-    registered,
-    languageChosen,
+    motorTier: profile.motorTier,
+    caregiverSetupComplete,
+    languageConfirmed,
+    sessionCount,
+    journalEntries,
+    caregiverVoiceNotes,
     stillness,
     setLanguage,
     checkIn,
     completeSession,
     setProfile,
     setPatient,
-    register,
-    chooseLanguage,
+    completeCaregiverSetup,
+    confirmLanguage,
+    addJournalEntry,
+    markVoiceNoteListened,
     setStillness,
     sync: doSync,
   }

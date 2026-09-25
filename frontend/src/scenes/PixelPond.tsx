@@ -100,8 +100,13 @@ function Dragonfly({ body, head, cel }: { body: string; head: string; cel: 'a' |
   )
 }
 
-/** A duckling, drawn from its own top-left rather than its head. */
-function Duckling({ x, y, delay }: { x: number; y: number; delay: number }) {
+/**
+ * A duckling, drawn from its own top-left rather than its head.
+ *
+ * Exported so Duck Roll Call can reuse this exact sprite rather than redraw
+ * it — the same duckling the pond already knows her by.
+ */
+export function Duckling({ x, y, delay }: { x: number; y: number; delay: number }) {
   return (
     <g transform={`translate(${x} ${y})`}>
       <g className="px-bob" style={{ animationDelay: `${delay}s` }}>
@@ -121,8 +126,8 @@ function Duckling({ x, y, delay }: { x: number; y: number; delay: number }) {
   )
 }
 
-/** The mother duck, riding lower in the water than her ducklings. */
-function Duck({ x, y, delay }: { x: number; y: number; delay: number }) {
+/** The mother duck, riding lower in the water than her ducklings. Exported for reuse. */
+export function Duck({ x, y, delay }: { x: number; y: number; delay: number }) {
   return (
     <g transform={`translate(${x} ${y})`}>
       <g className="px-bob" style={{ animationDelay: `${delay}s` }}>

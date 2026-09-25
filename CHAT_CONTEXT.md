@@ -15,45 +15,147 @@ A dementia-care companion app for elderly patients in North East India.
 
 ## Current app flow
 
-Root routing lives in `frontend/src/App.tsx`. State/gating lives in
-`frontend/src/state/SmaranContext.tsx`.
+Reworked 2026-09-24. Root routing lives in `frontend/src/App.tsx`. State
+lives in `frontend/src/state/SmaranContext.tsx`.
 
-**Patient side** (`/`), three one-time gates in order, each checked via
-context state:
-1. `/language` → `LanguageChoice` — shown if `languageChosen` is false.
-2. `/login` → `PatientLogin` — shown if not yet `registered`.
-3. `/welcome` → `Onboarding` — shown if not yet `onboarded`.
-4. Once past all three: `Home` — the pixel-art pond scene. Gates a mood
-   check-in itself (`needsCheckIn = moodToday === null`) before showing pond
-   content.
+**Patient side** (`/`), two one-time gates, and neither belongs to the
+patient for long:
+1. `/caregiver/setup` — if `caregiverSetupComplete` is false. The caregiver
+   presses "Hand it to her" in the Setup header, which sets the flag.
+2. `/language` → `LanguageChoice` — if `languageConfirmed` is false.
+3. Otherwise always `Home`. No login, no onboarding screen, no mood gate.
 
-From Home, four game routes branch off (selection logic via
-`deriveGameRoute(profile, moodToday)`):
-- `/game/weavers-loom` — WeaversLoom
-- `/game/grandmothers-tale` — GrandmothersTale
-- `/game/family-grove` — FamilyGrove
-- `/game/morning-rituals` — MorningRituals
+`LanguageChoice` is now a **confirmation**, not a selection: it greets her in
+the language the caregiver already set and offers "Yes, this is my language"
+plus a smaller "Change language" that reveals the original six-flower picker.
+Retires permanently once answered.
 
-**Caregiver side**, separate namespace:
-- `/caregiver` — Login
-- `/caregiver/dashboard` — Dashboard
-- `/caregiver/setup` — Setup
+**Patient login is gone.** `screens/Login.tsx` is orphaned — its body is
+line-commented out (it called the removed `register()`), header note on line 1.
+
+**Onboarding is now silent.** `screens/Onboarding.tsx` is likewise orphaned
+and commented out. What used to be a five-step arrival screen is now the
+first two sessions, handled inside `deriveGameRoute`:
+- `sessionCount === 0` → Duck Roll Call only, tier 1 (reads working-memory
+  span, tap accuracy, hesitation)
+- `sessionCount === 1` → Family Grove only, phase 1 (reads affect)
+- `sessionCount >= 2` → the full routing rules take over
+
+`sessionCount` lives in context, increments in `completeSession`, persists to
+localStorage.
+
+**Games are behind one door (2026-09-25).** Home no longer carries a card per
+game. It has a single button ("Today's quiet things") that opens `/games`
+(`screens/GamesMenu.tsx`), which lists every game in a fixed order:
+Duck Roll Call, Grandmother's Tale, Family Grove, Morning Rituals, The Lotus
+Frog. `deriveGameRoute()` still runs — it still sets difficulty, tap size and
+ambient tone for whichever game is picked — but it no longer decides which
+cards exist; `route.games[0]` only earns a small "suggested today" tag in the
+menu. Each individual game's own back button still returns to the pond (`/`),
+except Duck Roll Call's, which returns to `/games`.
+
+Game routes: `/game/duck-roll-call`, `/game/grandmothers-tale`,
+`/game/family-grove`, `/game/morning-rituals`, `/game/lotus-frog`.
+
+**The Weaver's Loom is retired.** `WEAVERS_LOOM` was removed from the
+`GameType` union, its route and every map keyed on it. `games/WeaversLoom.tsx`
+is orphaned (body commented out, header note) per the project convention. Its
+one shared export, `Progress`, moved to `components/GameShell.tsx`.
+`DOMAIN_GAMES.visualSemantic` now points at `LOTUS_FROG`, the only remaining
+game that reads that domain — so nothing exercises visualSemantic *except* the
+frog, worth knowing before anyone wonders why that domain moves slowly.
+
+**Domain 6 — Executive Function & Working Memory.** `executiveFunction` added
+to `DomainScores` (types, `emptyProfile`, `buildProfileV1`, dashboard trend
+line + `DashboardSummary.domainTrend`, sample data). Duck Roll Call feeds it
+through the ordinary single-domain EMA in `updateProfile()` — unlike the frog,
+which owns a bespoke four-domain update. The Java `CognitiveProfile` mirror has
+NOT been updated; the comment atop `cognitiveProfile.ts` says the two must not
+drift.
+
+### Duck Roll Call (`games/DuckRollCall.tsx`)
+
+Visuospatial working-memory span. All ducklings flash a number at once, the
+numbers vanish, she taps them back in ascending order. Locked design decisions:
+parallel (not sequential) encoding; **deliberately not audio-based** (no
+`speak()`, no sound on the numbers — so the reading is not confounded by
+language fluency or hearing); no visible timer in recall; a wrong tap shakes
+the duckling once and simply doesn't count; **a round has no hard failure** —
+she retries the same position until it lands, and `wasCorrect` only means
+"no retries needed".
+
+Difficulty: span 3→6 (capped at the six ducklings) and flash 2000ms→800ms,
+one lever at a time (two clean rounds raises span first; timing only tightens
+once span is 6; two rough rounds ease exactly one lever back). Span, flash
+and a 60-round history persist in localStorage
+(`smaran.duckRollCall.span|flashMs|history`). `breakdownSpan` (span at which
+rolling-window accuracy first drops below 70%, needs 3+ rounds at that span) is
+the single longitudinal number; it is computed from the history and shown in
+the DEV-only panel, but is **not yet sent anywhere** — no backend endpoint and
+no dashboard chart consume it.
+
+Errorless mode is `profile.anxietyThreshold <= 0.5` (the 0.5 cutoff is a
+judgment call; thresholds range 0.35–0.85 and lower means easier-to-overload):
+after one wrong tap the correct duckling gets a faint hint arrow.
+
+One `completeSession()` call per *sitting* (on leaving), aggregating that
+visit's rounds; nothing is recorded if no round was finished. The onboarding
+route now uses Duck Roll Call for session one (was the Weaver's Loom).
+
+**Reference fidelity.** The scene was built from a design export
+(`Downloads/Game — Duck Roll Call (pixel, playable)-html/`). Its pond is a
+**144×81** image on a **10px** grid — a different grid from the Home pond's
+360×203/4px. Committed assets in `frontend/public/`:
+- `duck-pond.png` — the reference pond, byte-identical except the two corner
+  lotuses were painted out (803 of 11,664 art pixels, all at y≥62, verified).
+- `duck-lilies.png` — 1440×810 transparent layer of the *implementation's own*
+  lily art (cut from `pond-pixel.png`), in three depth tiers: two large
+  corner-cropped foreground lotuses, medium edge-framing ones, small far ones.
+  Live render measures 98–99% identical to the reference over sky, moon,
+  bamboo, grass and shoreline (the rest is sub-pixel seams from the stage's
+  non-integer scale).
+The scripts that produced them were scratchpad-only and are not in the repo; to
+regenerate, re-derive from the reference PNG + `pond-pixel.png`.
+
+All game CSS for this screen is `drc-` prefixed on purpose: `scenes/pond.css`
+already defines a bare `.bob`, and the reference's own generic class names
+(`.bob .halo .hint .shake .duck`) would have collided.
+
+**New patient routes:**
+- `/journal` → `screens/Journal.tsx`
+- `/preview-home` → `Home`, permanent now (bypasses gates for headless
+  screenshots; no longer temporary scaffolding to revert)
+
+**Caregiver side**, unchanged namespace: `/caregiver`, `/caregiver/dashboard`,
+`/caregiver/setup`.
 
 Unmatched routes redirect to `/` (the pond), never a 404.
 
-**Known inconsistency, not yet resolved:** only `Home` has been rebuilt in
-the new pixel-art style. `LanguageChoice`, `PatientLogin`, `Onboarding`, the
-four game screens, and the caregiver screens still use the old vector
-"Sanctuary" scene. Also: the six-language button row appears in the reference
-bundle's Home template, but the project earlier had a standing instruction to
-hide the language selector permanently after first choice, so it was removed
-from Home — this discrepancy between the reference art and that instruction
-was noticed but never raised with the user.
+### Pond overlays (`components/PondOverlays.tsx`)
 
-**Explicit next task from the user:** "work on the app flow." Not yet scoped
-— no specifics given yet on what should change (e.g. extend pixel-art style
-to other screens, rework gating order, change game-selection logic, etc.).
-Needs clarifying questions when resumed.
+Three non-blocking additions composed into `Home.tsx`, not into the SVG —
+they need DOM for audio playback and navigation, and Home was already the
+established place for stage-coordinate DOM overlays:
+- `MoodDrift` — three emoji fade in after 3s if `moodToday === null`, fade
+  out after 10 more. No retry, no penalty, never appears if mood is set.
+- `JournalButton` — bottom-left, localised "Today", gold dot when an unheard
+  caregiver voice note exists.
+- `VoiceNoteCard` — "morning dew"; plays inline via HTML5 audio and marks the
+  note listened on play. Only renders when an unheard note exists.
+
+### Context shape (changed)
+
+Removed: `registered`, `onboarded`, `languageChosen`, `needsCheckIn`,
+`register()`, `chooseLanguage()`.
+Added: `caregiverSetupComplete`, `languageConfirmed`, `sessionCount`,
+`motorTier` (mirrors `profile.motorTier`, single source of truth),
+`journalEntries`, `caregiverVoiceNotes`, `completeCaregiverSetup()`,
+`confirmLanguage()`, `addJournalEntry()`, `markVoiceNoteListened()`.
+`moodToday` kept but no longer a gate.
+
+**Known inconsistency, not yet resolved:** only `Home`, `LanguageChoice` and
+`Journal` use the pixel-art style. The four game screens and the caregiver
+screens still use the old vector "Sanctuary" scene.
 
 ## Pixel-art pond (Home) — how it's built, and how it just changed
 
@@ -186,17 +288,57 @@ user needing to open a browser themselves:
   "vibe-coded" — worth keeping in mind for any new screens or art brought
   into this style.
 
+## Journal analysis — backend endpoint still needed
+
+`frontend/src/lib/journalAnalysis.ts` POSTs to **`/api/journal/analyse`**,
+which does not exist on the Spring Boot side yet. The frontend is written and
+degrades safely: if the endpoint is missing or the device is offline,
+`analyseJournalEntry()` returns null and the entry is still saved with
+`sentimentSignals: null`.
+
+**Deliberate architecture decision:** the Anthropic call is server-side, NOT
+in the browser. A Vite bundle cannot hold a secret — an API key shipped to
+the client is readable in devtools — and journal entries are a dementia
+patient's private writing that should not go to a third party straight from
+her tablet. Do not "simplify" this by calling Anthropic from the frontend.
+
+Request body the frontend sends:
+`{ text, patientId, languageCode, systemPrompt, model: 'claude-sonnet-5' }`
+
+Expected response: `{ signals: SentimentSignals }` (a bare `SentimentSignals`
+object also works — the client coerces either shape).
+
+`SentimentSignals` (see `lib/types.ts`): `valence` -1..1, `arousal` 0..1,
+`themes` string[], `concernFlags` subset of
+CONFUSION/DISTRESS/LONELINESS/PAIN, `summary` string. The client clamps
+ranges and filters unknown flags, so a slightly-off model response degrades
+rather than corrupts.
+
+The system prompt lives in `JOURNAL_SYSTEM_PROMPT` in that same file,
+deliberately next to the type it must satisfy. **The user's original spec for
+this prompt was truncated mid-sentence**, so the current prompt is written
+from scratch and should be reviewed/replaced when they supply theirs.
+
 ## Open threads / pending items (not started, not scoped)
 
-- **"Work on the app flow"** — the explicit next task, entirely unscoped as
-  of this writing. Needs a scoping conversation: what about the flow needs
-  work? Candidates based on known gaps below, but none confirmed:
-  - Extending the pixel-art treatment to LanguageChoice, Login, Onboarding,
-    the four game screens, and/or the caregiver screens (currently all still
-    on the old vector "Sanctuary" scene).
-  - Reconciling the language-selector-on-Home discrepancy noted above.
-  - No Settings screen exists yet.
-  - No dynamic time-of-day/sky system (pond is currently always night).
-  - RBAC backend implementation status unknown/unverified this session.
+- **`/api/journal/analyse` backend endpoint** — see above. The only thing
+  blocking journal sentiment from working end to end.
+- **Journal entries are localStorage-only.** No backend sync yet; noted as
+  "backend sync later" in the spec.
+- **Duck Roll Call data goes nowhere yet.** Per-round history and
+  `breakdownSpan` live only in localStorage — no backend session-history
+  endpoint, no Domain-6 dashboard view beyond the EMA'd `executiveFunction`
+  line. Java-side `GameType` enum and `CognitiveProfile` domain scores still
+  need `DUCK_ROLL_CALL` / `executiveFunction` and the removal of
+  `WEAVERS_LOOM`.
+- **Caregiver voice notes have no producer.** `caregiverVoiceNotes` is read
+  by the pond overlay but nothing writes to it yet — the caregiver Setup /
+  Dashboard side needs a way to record and attach one.
+- Extending pixel-art treatment to the four game screens and the caregiver
+  screens (still on the old vector "Sanctuary" scene).
+- No Settings screen exists yet.
+- No dynamic time-of-day/sky system (pond is currently always night).
+- RBAC backend implementation status unknown/unverified.
 - Whether to keep or delete the now-orphaned `pixelScenery.tsx` — leaning
-  toward keep, pending user direction.
+  toward keep, pending user direction. Same question now applies to the
+  commented-out `screens/Login.tsx` and `screens/Onboarding.tsx`.

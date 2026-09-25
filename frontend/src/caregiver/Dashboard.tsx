@@ -28,10 +28,11 @@ import type { DashboardAlert, DashboardSummary, GameType, GrovePhase } from '../
  */
 
 const GAME_NAMES: Record<GameType, string> = {
-  WEAVERS_LOOM: "The Weaver's Loom",
+  DUCK_ROLL_CALL: 'Duck Roll Call',
   GRANDMOTHERS_TALE: "Grandmother's Tale",
   FAMILY_GROVE: 'Family Grove',
   MORNING_RITUALS: 'Morning Rituals',
+  LOTUS_FROG: 'The Lotus Frog',
 }
 
 const DOMAIN_LINES = [
@@ -40,6 +41,7 @@ const DOMAIN_LINES = [
   { key: 'motor', name: 'Motor', colour: '#7a9bd4' },
   { key: 'affective', name: 'Affective', colour: '#ddeaf8' },
   { key: 'temporal', name: 'Temporal', colour: '#5a7840' },
+  { key: 'executiveFunction', name: 'Executive function', colour: '#a87fd0' },
 ] as const
 
 const ALERT_COLOUR: Record<DashboardAlert['level'], string> = {

@@ -1,12 +1,12 @@
 import { useMemo, type CSSProperties } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import PixelPond, { STAGE_W, useStageScale } from '../scenes/PixelPond'
-import MoodCheckIn from '../components/MoodCheckIn'
+import { JournalButton, MoodDrift, VoiceNoteCard } from '../components/PondOverlays'
 import SyncIndicator from '../components/SyncIndicator'
 import { useSmaran } from '../state/SmaranContext'
 import { buildGreeting, spokenGreeting, t, translateKinshipTerm } from '../i18n/strings'
 import { speak } from '../lib/speechEngine'
-import type { GameType, MoodKey } from '../lib/types'
+import type { MoodKey } from '../lib/types'
 
 /**
  * The sanctuary home screen, drawn in pixel art.
@@ -22,13 +22,6 @@ import type { GameType, MoodKey } from '../lib/types'
  * apart from the stone's ring, where a circle is the point.
  */
 
-const GAME_ROUTES: Record<GameType, { path: string; label: string }> = {
-  WEAVERS_LOOM: { path: '/game/weavers-loom', label: "The Weaver's Loom" },
-  GRANDMOTHERS_TALE: { path: '/game/grandmothers-tale', label: "Grandmother's Tale" },
-  FAMILY_GROVE: { path: '/game/family-grove', label: 'Family Grove' },
-  MORNING_RITUALS: { path: '/game/morning-rituals', label: 'Morning Rituals' },
-}
-
 /**
  * Indic scripts have no pixel face, so they fall back to Noto and sit a little
  * smaller, which keeps their optical weight level with the pixel type beside
@@ -42,34 +35,13 @@ const SCRIPT: Record<string, { font: string; size: number }> = {
 
 /* ------------------------------------------------------------------ sprites */
 
-function TreeIcon() {
+/** A little stack of leaves — the one button that opens onto every game. */
+function GamesIcon() {
   return (
-    <svg width="36" height="40" viewBox="0 0 9 10" shapeRendering="crispEdges" aria-hidden="true">
-      <path
-        fill="#2f7d3a"
-        d="M3 0h3v1h-3zM2 1h1v1h-1zM6 1h1v1h-1zM1 2h1v1h-1zM4 2h1v1h-1zM7 2h1v1h-1zM0 3h1v1h-1zM6 3h1v1h-1zM8 3h1v1h-1zM0 4h1v1h-1zM2 4h1v1h-1zM8 4h1v1h-1zM1 5h1v1h-1zM5 5h1v1h-1zM7 5h1v1h-1zM2 6h2v1h-2zM5 6h2v1h-2z"
-      />
-      <path
-        fill="#5fb05a"
-        d="M3 1h3v1h-3zM2 2h2v1h-2zM5 2h2v1h-2zM1 3h5v1h-5zM7 3h1v1h-1zM1 4h1v1h-1zM3 4h5v1h-5zM2 5h3v1h-3zM6 5h1v1h-1z"
-      />
-      <path fill="#8a5a36" d="M4 6h1v1h-1zM4 7h1v1h-1zM4 8h1v1h-1zM3 9h3v1h-3z" />
-    </svg>
-  )
-}
-
-function SunriseIcon() {
-  return (
-    <svg width="36" height="36" viewBox="0 0 9 9" shapeRendering="crispEdges" aria-hidden="true">
-      <path
-        fill="#f06a5a"
-        d="M0 0h9v1h-9zM0 1h4v1h-4zM5 1h4v1h-4zM0 2h2v1h-2zM7 2h2v1h-2zM0 3h1v1h-1zM8 3h1v1h-1z"
-      />
-      <path fill="#ffd34a" d="M4 1h1v1h-1zM2 2h5v1h-5zM1 3h3v1h-3zM5 3h3v1h-3zM1 4h2v1h-2zM6 4h2v1h-2z" />
-      <path fill="#fff1a0" d="M4 3h1v1h-1zM3 4h3v1h-3z" />
-      <path fill="#f7a14a" d="M0 4h1v1h-1zM8 4h1v1h-1z" />
-      <path fill="#3d7ad6" d="M0 5h9v1h-9zM0 6h1v1h-1zM8 6h1v1h-1zM0 7h3v1h-3zM6 7h3v1h-3zM0 8h9v1h-9z" />
-      <path fill="#9cc4f5" d="M1 6h7v1h-7zM3 7h3v1h-3z" />
+    <svg width="36" height="32" viewBox="0 0 9 8" shapeRendering="crispEdges" aria-hidden="true">
+      <path fill="#256b41" d="M1 4h5v1h-5zM0 5h7v1h-7zM1 6h5v1h-5z" opacity="0.7" />
+      <path fill="#2f8250" d="M2 2h5v1h-5zM1 3h7v1h-7zM2 4h5v1h-5z" opacity="0.85" />
+      <path fill="#46a566" d="M3 0h4v1h-4zM2 1h6v1h-6zM3 2h4v1h-4z" />
     </svg>
   )
 }
@@ -139,9 +111,22 @@ const CARD_STYLE: CSSProperties = {
 const SHADOW = '2px 2px 0 #070d26'
 
 export default function Home() {
-  const { patient, language, needsCheckIn, checkIn, route, stillness, tapTarget } = useSmaran()
+  const {
+    patient,
+    language,
+    checkIn,
+    stillness,
+    tapTarget,
+    moodToday,
+    caregiverVoiceNotes,
+    markVoiceNoteListened,
+  } = useSmaran()
   const navigate = useNavigate()
   const scale = useStageScale()
+
+  // Oldest first, so a backlog is heard in the order it was left.
+  const unheard = caregiverVoiceNotes.filter((n) => !n.listened)
+  const dew = unheard[0]
 
   const displayName = patient.name?.trim() || patient.kinshipTerm
   const kin = useMemo(() => translateKinshipTerm(displayName, language), [language, displayName])
@@ -152,32 +137,14 @@ export default function Home() {
     await checkIn(mood)
   }
 
-  const games = route.games.slice(0, 2).map((g) => ({ key: g, ...GAME_ROUTES[g] }))
-
   return (
     <div className={`px-viewport ${stillness ? 'still' : ''}`}>
       <div className="px-stage" style={{ transform: `translateX(-50%) scale(${scale})` }}>
-        <PixelPond recede={needsCheckIn} />
+        <PixelPond />
 
-        {/* ------------------------------------------------ the emotion check-in */}
-        {needsCheckIn && (
-          <div
-            className="plaque-fade"
-            style={{
-              position: 'absolute',
-              inset: 0,
-              zIndex: 30,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            <MoodCheckIn variant="three" onPick={onMood} prompt={t(language, 'howAreYou')} tapTarget={tapTarget} />
-          </div>
-        )}
-
-        {!needsCheckIn && (
-          <>
+        {/* The pond is never gated. Mood is asked for softly, below, and the
+            asking withdraws on its own if she would rather not answer. */}
+        <>
             {/* ------------------------------------------------ greeting */}
             <div
               className="plaque-fade"
@@ -264,30 +231,17 @@ export default function Home() {
               {t(language, 'gardenSeed')}
             </div>
 
-            {/* ------------------------------------------- today's two choices */}
-            <div
-              style={{
-                position: 'absolute',
-                left: 0,
-                top: 362,
-                width: STAGE_W,
-                display: 'flex',
-                justifyContent: 'center',
-                gap: 20,
-              }}
-            >
-              {games.map((g, i) => (
-                <button
-                  key={g.key}
-                  type="button"
-                  className="px-card"
-                  onClick={() => navigate(g.path)}
-                  style={{ ...CARD_STYLE, minWidth: Math.max(tapTarget, i === 0 ? 152 : 172) }}
-                >
-                  {g.key === 'MORNING_RITUALS' ? <SunriseIcon /> : <TreeIcon />}
-                  <span>{g.label}</span>
-                </button>
-              ))}
+            {/* ------------------------------------------------- one door, not four */}
+            <div style={{ position: 'absolute', left: 0, top: 362, width: STAGE_W, display: 'flex', justifyContent: 'center' }}>
+              <button
+                type="button"
+                className="px-card"
+                onClick={() => navigate('/games')}
+                style={{ ...CARD_STYLE, minWidth: Math.max(tapTarget, 220) }}
+              >
+                <GamesIcon />
+                <span>{t(language, 'todaysGames')}</span>
+              </button>
             </div>
 
             {/* ------------------------------------------------------ the stone */}
@@ -361,30 +315,37 @@ export default function Home() {
             >
               {t(language, 'voiceIdle')}
             </div>
+
+            {/* ------------------------------------- the three quiet offers */}
+            <MoodDrift moodToday={moodToday} onPick={onMood} tapTarget={tapTarget} />
+
+            <JournalButton
+              language={language}
+              unread={unheard.length > 0}
+              onOpen={() => navigate('/journal')}
+              tapTarget={tapTarget}
+            />
+
+            {dew && <VoiceNoteCard note={dew} onListened={markVoiceNoteListened} />}
           </>
-        )}
       </div>
 
       {/* ------------- pinned to the screen, outside the water, never cropped -- */}
-      {!needsCheckIn && (
-        <>
-          <SyncIndicator className="px-corner-sync" />
-          <Link
-            to="/caregiver"
-            style={{
-              position: 'absolute',
-              right: 26,
-              bottom: 18,
-              fontFamily: "'VT323', monospace",
-              fontSize: 24,
-              textUnderlineOffset: 4,
-              color: '#c4cce0',
-            }}
-          >
-            {t(language, 'caregiverLink')}
-          </Link>
-        </>
-      )}
+      <SyncIndicator className="px-corner-sync" />
+      <Link
+        to="/caregiver"
+        style={{
+          position: 'absolute',
+          right: 26,
+          bottom: 18,
+          fontFamily: "'VT323', monospace",
+          fontSize: 24,
+          textUnderlineOffset: 4,
+          color: '#c4cce0',
+        }}
+      >
+        {t(language, 'caregiverLink')}
+      </Link>
     </div>
   )
 }

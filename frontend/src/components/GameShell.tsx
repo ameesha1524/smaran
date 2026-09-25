@@ -74,6 +74,26 @@ export default function GameShell({ title, spoken, tag, children, videoRef, foot
   )
 }
 
+/** Progress dots. Never a fraction, never a percentage. */
+export function Progress({ total, done }: { total: number; done: number }) {
+  return (
+    <div className="flex items-center gap-2" aria-hidden="true">
+      {Array.from({ length: total }, (_, i) => (
+        <span
+          key={i}
+          style={{
+            width: 9,
+            height: 9,
+            borderRadius: 999,
+            background: i < done ? 'var(--gold)' : 'rgba(221,234,248,0.22)',
+            transition: 'background 900ms ease-in-out',
+          }}
+        />
+      ))}
+    </div>
+  )
+}
+
 /**
  * The end of a session. Never a score screen: a count of what opened, the
  * domains she touched, and one way onward. Every session ends in success.

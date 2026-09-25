@@ -25,10 +25,11 @@ export const STAGE_NAMES: Record<1 | 2 | 3 | 4, string> = {
 /** Completing anything at all waters the garden. Completing it well waters more. */
 export function growthFor(gameType: GameType, completionRate: number): number {
   const base: Record<GameType, number> = {
-    WEAVERS_LOOM: 2,
+    DUCK_ROLL_CALL: 2,
     GRANDMOTHERS_TALE: 2,
     FAMILY_GROVE: 3, // the emotional core earns a little more
     MORNING_RITUALS: 2,
+    LOTUS_FROG: 2,
   }
   // Floor of 1: showing up is itself worth something.
   return Math.max(1, Math.round(base[gameType] * Math.max(0.5, completionRate)))

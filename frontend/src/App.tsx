@@ -1,12 +1,13 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
 import Home from './screens/Home'
-import Onboarding from './screens/Onboarding'
-import WeaversLoom from './games/WeaversLoom'
+import GamesMenu from './screens/GamesMenu'
+import DuckRollCall from './games/DuckRollCall'
 import GrandmothersTale from './games/GrandmothersTale'
 import FamilyGrove from './games/FamilyGrove'
 import MorningRituals from './games/MorningRituals'
+import LotusFrog from './games/LotusFrog'
 import LanguageChoice from './screens/LanguageChoice'
-import PatientLogin from './screens/Login'
+import Journal from './screens/Journal'
 import Login from './caregiver/Login'
 import Dashboard from './caregiver/Dashboard'
 import Setup from './caregiver/Setup'
@@ -21,13 +22,14 @@ import { SmaranProvider, useSmaran } from './state/SmaranContext'
  */
 
 function PatientEntry() {
-  const { onboarded, registered, languageChosen } = useSmaran()
-  // Three gates, each asked exactly once: which language (a flower), who is
-  // sitting down (a name), and the arrival that builds the profile. After
-  // that this route is the pond and nothing else.
-  if (!languageChosen) return <Navigate to="/language" replace />
-  if (!registered) return <Navigate to="/login" replace />
-  return onboarded ? <Home /> : <Navigate to="/welcome" replace />
+  const { caregiverSetupComplete, languageConfirmed } = useSmaran()
+  // Two gates, and neither belongs to the patient for long. The caregiver sets
+  // the device up; she confirms the language once. After that this route is the
+  // pond, unconditionally — no login, no onboarding screen, no mood gate. What
+  // used to be onboarding is now the first two sessions, observed silently.
+  if (!caregiverSetupComplete) return <Navigate to="/caregiver/setup" replace />
+  if (!languageConfirmed) return <Navigate to="/language" replace />
+  return <Home />
 }
 
 export default function App() {
@@ -36,13 +38,16 @@ export default function App() {
       <Routes>
         <Route path="/" element={<PatientEntry />} />
         <Route path="/language" element={<LanguageChoice />} />
-        <Route path="/login" element={<PatientLogin />} />
-        <Route path="/welcome" element={<Onboarding />} />
+        <Route path="/journal" element={<Journal />} />
+        <Route path="/games" element={<GamesMenu />} />
+        {/* Bypasses the gates so the pond can be screenshotted headlessly. */}
+        <Route path="/preview-home" element={<Home />} />
 
-        <Route path="/game/weavers-loom" element={<WeaversLoom />} />
+        <Route path="/game/duck-roll-call" element={<DuckRollCall />} />
         <Route path="/game/grandmothers-tale" element={<GrandmothersTale />} />
         <Route path="/game/family-grove" element={<FamilyGrove />} />
         <Route path="/game/morning-rituals" element={<MorningRituals />} />
+        <Route path="/game/lotus-frog" element={<LotusFrog />} />
 
         <Route path="/caregiver" element={<Login />} />
         <Route path="/caregiver/dashboard" element={<Dashboard />} />

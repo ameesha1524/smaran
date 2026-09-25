@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import GameShell, { SessionComplete } from '../components/GameShell'
-import { Progress } from './WeaversLoom'
+import GameShell, { Progress, SessionComplete } from '../components/GameShell'
 import { useAdaptiveSession } from '../hooks/useAdaptiveSession'
 import { useBloomLayer } from '../components/Bloom'
 import { useSmaran } from '../state/SmaranContext'

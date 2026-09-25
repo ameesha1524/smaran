@@ -201,10 +201,13 @@ export function weakestDomain(trend: { date: string; scores: DomainScores }[]): 
 
 const DOMAIN_GAMES: Record<keyof DomainScores, GameType> = {
   language: 'GRANDMOTHERS_TALE',
-  visualSemantic: 'WEAVERS_LOOM',
+  // The Lotus Frog is the only remaining game that reads visualSemantic —
+  // the Weaver's Loom, which used to own this domain, has been retired.
+  visualSemantic: 'LOTUS_FROG',
   motor: 'MORNING_RITUALS',
   affective: 'FAMILY_GROVE',
   temporal: 'MORNING_RITUALS',
+  executiveFunction: 'DUCK_ROLL_CALL',
 }
 
 /* ---------------------------------------------------------------- routing */
@@ -212,6 +215,8 @@ const DOMAIN_GAMES: Record<keyof DomainScores, GameType> = {
 export interface RouteInputs {
   profile: CognitiveProfile
   moodToday: MoodKey | null
+  /** Completed sessions so far. The first two are the onboarding. */
+  sessionCount?: number
   domainTrend?: { date: string; scores: DomainScores }[]
   now?: Date
 }
@@ -219,20 +224,51 @@ export interface RouteInputs {
 /**
  * deriveGameRoute — run at every session start.
  *
+ * The first two sessions are fixed, and that is the whole of onboarding. There
+ * is no questionnaire and no arrival screen: session one is Duck Roll Call at
+ * its gentlest span, which is where working-memory span, tap accuracy and
+ * hesitation are first read; session two is the Family Grove with names still
+ * showing, which is where affect is first read. By session three the profile
+ * has enough signal to route honestly, and the rules below take over.
+ *
  *   1. outside the peak window  → low-effort games only
  *   2. mood anxious or low      → Family Grove first, 432 Hz, difficulty −1
  *   3. weakest domain this week → its game goes second
  *   4. motor tier               → filter timing mechanics, set tap size globally
  *   5. per-member Grove phase   → resolved separately, per family member
  */
-export function deriveGameRoute({ profile, moodToday, domainTrend = [], now = new Date() }: RouteInputs): GameRoute {
+export function deriveGameRoute({
+  profile,
+  moodToday,
+  sessionCount = 0,
+  domainTrend = [],
+  now = new Date(),
+}: RouteInputs): GameRoute {
   const rationale: string[] = []
+
+  if (sessionCount < 2) {
+    const first = sessionCount === 0
+    return {
+      patientId: profile.patientId,
+      games: first ? ['DUCK_ROLL_CALL'] : ['FAMILY_GROVE'],
+      difficultyTier: 1,
+      ambientHz: first ? 432 : 528,
+      tapTargetPx: tapTargetFor(profile.motorTier),
+      withinPeakWindow: withinPeak(profile.selfReportedPeak, now),
+      rationale: [
+        first
+          ? 'First session — Duck Roll Call at span 3. This is the onboarding: working-memory span, tap accuracy and hesitation are read here.'
+          : 'Second session — the Family Grove at phase 1, names visible. Affect is read here.',
+      ],
+    }
+  }
+
   const inPeak = withinPeak(profile.selfReportedPeak, now)
   let difficultyTier = 2
   let ambientHz: 432 | 528 = 432
 
   const lowEffort: GameType[] = ['FAMILY_GROVE', 'MORNING_RITUALS']
-  let games: GameType[] = ['WEAVERS_LOOM', 'GRANDMOTHERS_TALE', 'FAMILY_GROVE', 'MORNING_RITUALS']
+  let games: GameType[] = ['DUCK_ROLL_CALL', 'GRANDMOTHERS_TALE', 'FAMILY_GROVE', 'MORNING_RITUALS']
 
   if (!inPeak) {
     games = games.filter((g) => lowEffort.includes(g))
@@ -341,6 +377,10 @@ export function buildProfileV1(s: OnboardingSignals): CognitiveProfile {
       // Nothing measures temporal orientation until Morning Rituals runs once;
       // a neutral 0.6 is honest about that rather than inventing a reading.
       temporal: 0.6,
+      // Duck Roll Call is the onboarding's own first session, but v1.0 is
+      // written before that session's own EMA update lands, so this starts
+      // neutral too rather than double-counting the first round.
+      executiveFunction: 0.6,
     },
     motorTier: tier,
     anxietyThreshold: deriveAnxietyThreshold({
@@ -365,8 +405,15 @@ function startingPhaseFor(objectAccuracy: number): GrovePhase {
 
 /** Applied after every session — the loop that closes the profile. */
 export function updateProfile(profile: CognitiveProfile, result: SessionResultDraft): CognitiveProfile {
+  // The Lotus Frog reads four domains itself and folds them in through
+  // applyFrogReport, which weights each one by how much evidence the visit
+  // actually produced. Running the single-domain EMA below as well would count
+  // the same visit twice, and would do it from a completion rate the pond does
+  // not really have — there is nothing there to complete.
+  if (result.gameType === 'LOTUS_FROG') return profile
+
   const domain = {
-    WEAVERS_LOOM: 'visualSemantic',
+    DUCK_ROLL_CALL: 'executiveFunction',
     GRANDMOTHERS_TALE: 'language',
     FAMILY_GROVE: 'affective',
     MORNING_RITUALS: 'temporal',
@@ -396,7 +443,14 @@ export function updateProfile(profile: CognitiveProfile, result: SessionResultDr
 export function emptyProfile(patientId: string, peak: PeakWindow = 'MORNING'): CognitiveProfile {
   return {
     patientId,
-    domainScores: { language: 0.6, visualSemantic: 0.6, motor: 0.6, affective: 0.7, temporal: 0.6 },
+    domainScores: {
+      language: 0.6,
+      visualSemantic: 0.6,
+      motor: 0.6,
+      affective: 0.7,
+      temporal: 0.6,
+      executiveFunction: 0.6,
+    },
     motorTier: 'MODERATE',
     anxietyThreshold: 0.72,
     startingPhase: 1,

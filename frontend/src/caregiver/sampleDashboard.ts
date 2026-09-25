@@ -36,6 +36,8 @@ export function sampleDashboard(): DashboardSummary {
       motor: wobble(0.66 - t * 0.06, i + 3),
       affective: wobble(0.71, i + 4, 0.08),
       temporal: wobble(0.63, i + 5),
+      // Duck Roll Call is new — a gentle upward line as span calibrates.
+      executiveFunction: wobble(0.55 + t * 0.12, i + 6, 0.05),
     }
   })
 
@@ -52,7 +54,7 @@ export function sampleDashboard(): DashboardSummary {
 
   const perGame: { gameType: GameType; sessions: number; avgScore: number; trend: 'UP' | 'FLAT' | 'DOWN' }[] = [
     { gameType: 'FAMILY_GROVE', sessions: 11, avgScore: 0.88, trend: 'UP' },
-    { gameType: 'WEAVERS_LOOM', sessions: 9, avgScore: 0.62, trend: 'DOWN' },
+    { gameType: 'DUCK_ROLL_CALL', sessions: 9, avgScore: 0.62, trend: 'UP' },
     { gameType: 'GRANDMOTHERS_TALE', sessions: 7, avgScore: 0.75, trend: 'FLAT' },
     { gameType: 'MORNING_RITUALS', sessions: 6, avgScore: 0.7, trend: 'FLAT' },
   ]
