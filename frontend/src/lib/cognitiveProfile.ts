@@ -204,7 +204,13 @@ const DOMAIN_GAMES: Record<keyof DomainScores, GameType> = {
   // The Lotus Frog is the only remaining game that reads visualSemantic —
   // the Weaver's Loom, which used to own this domain, has been retired.
   visualSemantic: 'LOTUS_FROG',
-  motor: 'MORNING_RITUALS',
+  // The Koi Are Jumping is a vigilance/reaction task — watch the water, tap
+  // the instant something leaps — which is a motor-domain reading in the
+  // clearest sense: response initiation and sustained visual attention, not
+  // memory. Morning Rituals used to stand in for motor for lack of a better
+  // fit; it now reads temporal alone, same split Duck Roll Call did for
+  // executiveFunction.
+  motor: 'KOI_ARE_JUMPING',
   affective: 'FAMILY_GROVE',
   temporal: 'MORNING_RITUALS',
   executiveFunction: 'DUCK_ROLL_CALL',
@@ -267,8 +273,17 @@ export function deriveGameRoute({
   let difficultyTier = 2
   let ambientHz: 432 | 528 = 432
 
-  const lowEffort: GameType[] = ['FAMILY_GROVE', 'MORNING_RITUALS']
-  let games: GameType[] = ['DUCK_ROLL_CALL', 'GRANDMOTHERS_TALE', 'FAMILY_GROVE', 'MORNING_RITUALS']
+  // Koi Are Jumping never scores a miss as a failure — the gentlest game in
+  // the pond — so it belongs on a low-effort day alongside Family Grove and
+  // Morning Rituals.
+  const lowEffort: GameType[] = ['FAMILY_GROVE', 'MORNING_RITUALS', 'KOI_ARE_JUMPING']
+  let games: GameType[] = [
+    'DUCK_ROLL_CALL',
+    'GRANDMOTHERS_TALE',
+    'FAMILY_GROVE',
+    'MORNING_RITUALS',
+    'KOI_ARE_JUMPING',
+  ]
 
   if (!inPeak) {
     games = games.filter((g) => lowEffort.includes(g))
@@ -417,6 +432,9 @@ export function updateProfile(profile: CognitiveProfile, result: SessionResultDr
     GRANDMOTHERS_TALE: 'language',
     FAMILY_GROVE: 'affective',
     MORNING_RITUALS: 'temporal',
+    // The first game that actually closes the loop on the motor domain —
+    // until now nothing wrote it after onboarding's own first estimate.
+    KOI_ARE_JUMPING: 'motor',
   }[result.gameType] as keyof DomainScores
 
   // Exponential moving average: one bad day never rewrites a person.

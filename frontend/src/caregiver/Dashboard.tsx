@@ -33,6 +33,7 @@ const GAME_NAMES: Record<GameType, string> = {
   FAMILY_GROVE: 'Family Grove',
   MORNING_RITUALS: 'Morning Rituals',
   LOTUS_FROG: 'The Lotus Frog',
+  KOI_ARE_JUMPING: 'The Koi Are Jumping',
 }
 
 const DOMAIN_LINES = [

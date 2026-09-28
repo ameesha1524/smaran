@@ -33,7 +33,9 @@ export function sampleDashboard(): DashboardSummary {
       language: wobble(0.74, i + 1),
       // The signal the caregiver is meant to see: 0.90 → 0.70 → 0.55.
       visualSemantic: wobble(0.9 - t * 0.35, i + 2, 0.03),
-      motor: wobble(0.66 - t * 0.06, i + 3),
+      // Koi Are Jumping is new too, same as Duck Roll Call before it — motor
+      // had nothing writing to it until now, so this is the first real line.
+      motor: wobble(0.6 + t * 0.08, i + 3, 0.05),
       affective: wobble(0.71, i + 4, 0.08),
       temporal: wobble(0.63, i + 5),
       // Duck Roll Call is new — a gentle upward line as span calibrates.
@@ -57,6 +59,7 @@ export function sampleDashboard(): DashboardSummary {
     { gameType: 'DUCK_ROLL_CALL', sessions: 9, avgScore: 0.62, trend: 'UP' },
     { gameType: 'GRANDMOTHERS_TALE', sessions: 7, avgScore: 0.75, trend: 'FLAT' },
     { gameType: 'MORNING_RITUALS', sessions: 6, avgScore: 0.7, trend: 'FLAT' },
+    { gameType: 'KOI_ARE_JUMPING', sessions: 4, avgScore: 0.68, trend: 'UP' },
   ]
 
   const acousticTrend = Array.from({ length: 30 }, (_, i) => ({

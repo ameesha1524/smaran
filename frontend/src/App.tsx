@@ -6,6 +6,7 @@ import GrandmothersTale from './games/GrandmothersTale'
 import FamilyGrove from './games/FamilyGrove'
 import MorningRituals from './games/MorningRituals'
 import LotusFrog from './games/LotusFrog'
+import KoiAreJumping from './games/KoiAreJumping'
 import LanguageChoice from './screens/LanguageChoice'
 import Journal from './screens/Journal'
 import Login from './caregiver/Login'
@@ -48,6 +49,7 @@ export default function App() {
         <Route path="/game/family-grove" element={<FamilyGrove />} />
         <Route path="/game/morning-rituals" element={<MorningRituals />} />
         <Route path="/game/lotus-frog" element={<LotusFrog />} />
+        <Route path="/game/koi-are-jumping" element={<KoiAreJumping />} />
 
         <Route path="/caregiver" element={<Login />} />
         <Route path="/caregiver/dashboard" element={<Dashboard />} />

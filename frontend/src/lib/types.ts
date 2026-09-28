@@ -11,6 +11,7 @@ export type GameType =
   | 'FAMILY_GROVE'
   | 'MORNING_RITUALS'
   | 'LOTUS_FROG'
+  | 'KOI_ARE_JUMPING'
 
 export type MotorTier = 'FLUID' | 'MODERATE' | 'SUPPORTED'
 

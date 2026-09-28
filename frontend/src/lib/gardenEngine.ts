@@ -30,6 +30,7 @@ export function growthFor(gameType: GameType, completionRate: number): number {
     FAMILY_GROVE: 3, // the emotional core earns a little more
     MORNING_RITUALS: 2,
     LOTUS_FROG: 2,
+    KOI_ARE_JUMPING: 2,
   }
   // Floor of 1: showing up is itself worth something.
   return Math.max(1, Math.round(base[gameType] * Math.max(0.5, completionRate)))

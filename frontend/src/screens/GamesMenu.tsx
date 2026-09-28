@@ -29,6 +29,7 @@ const ENTRIES: Entry[] = [
   { key: 'FAMILY_GROVE', path: '/game/family-grove', label: 'Family Grove', icon: TreeIcon },
   { key: 'MORNING_RITUALS', path: '/game/morning-rituals', label: 'Morning Rituals', icon: SunriseIcon },
   { key: 'LOTUS_FROG', path: '/game/lotus-frog', label: 'The Lotus Frog', icon: FrogIcon },
+  { key: 'KOI_ARE_JUMPING', path: '/game/koi-are-jumping', label: 'The Koi Are Jumping', icon: KoiIcon },
 ]
 
 /* ------------------------------------------------------------------ sprites */
@@ -54,6 +55,16 @@ function FrogIcon() {
       <path fill="#2f7d3a" d="M1 4h1v1h-1zM2 4h1v1h-1zM3 4h1v1h-1zM4 4h1v1h-1zM5 4h1v1h-1zM6 4h1v1h-1zM7 4h1v1h-1zM0 6h1v1h-1zM1 6h1v1h-1zM7 6h1v1h-1zM8 6h1v1h-1z" />
       <path fill="#f4f1e0" d="M1 1h1v1h-1zM6 1h1v1h-1z" />
       <path fill="#1a1a1a" d="M2 1h1v1h-1zM7 1h1v1h-1z" />
+    </svg>
+  )
+}
+
+function KoiIcon() {
+  return (
+    <svg width="36" height="28" viewBox="0 0 9 7" shapeRendering="crispEdges" aria-hidden="true">
+      <path fill="#ec7a2a" d="M1 2h5v1h-5zM1 4h5v1h-5zM2 1h3v1h-3zM2 5h3v1h-3zM6 2h2v1h-2zM6 4h2v1h-2z" />
+      <path fill="#f3efe6" d="M2 3h3v1h-3zM0 3h1v1h-1z" />
+      <path fill="#1c1a24" d="M2 2h1v1h-1z" />
     </svg>
   )
 }
