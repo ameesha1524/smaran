@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useSmaran } from '../state/SmaranContext'
 import { STAGE_W, useStageScale } from '../scenes/PixelPond'
@@ -14,9 +14,10 @@ import './games.css'
  * the same split Duck Roll Call did for executiveFunction.
  *
  * The pond sits still. Every so often the water ripples, and a few seconds
- * later something leaps — a koi most of the time, occasionally a little
- * silver fish, a frog or a turtle — and comes down again a couple of
- * seconds later. The whole arc is one enormous, forgiving tap target: she is
+ * later something leaps — a koi half the time, otherwise a little silver
+ * fish, a frog or a turtle — from either bank, at a different size and
+ * speed each time, and is back in the water within about two seconds.
+ * The whole arc is one enormous, forgiving tap target: she is
  * reading the leap, not aiming at a point on the screen, and a slow or
  * missed tap is never marked as wrong. There is no visible timer, no score,
  * and — deliberately, as with every other game here — no penalty sound.
@@ -323,6 +324,9 @@ interface KoiRoundResult {
   creature: Creature
   wasTapped: boolean
   reactionMs: number | null
+  direction: 'ltr' | 'rtl'
+  radiusPx: number
+  leapMs: number
   sessionTimeOfDay: 'morning' | 'afternoon' | 'evening' | 'night'
 }
 
@@ -335,12 +339,48 @@ function timeOfDay(): KoiRoundResult['sessionTimeOfDay'] {
   return h < 12 ? 'morning' : h < 17 ? 'afternoon' : h < 21 ? 'evening' : 'night'
 }
 
-/** 74% koi, the rest split evenly across the three visitors — same odds as the reference. */
-function pickCreature(): Creature {
-  const r = Math.random()
-  if (r < 0.74) return 'koi'
-  const others: Creature[] = ['silverfish', 'frog', 'turtle']
-  return others[Math.floor(Math.random() * others.length)]
+/**
+ * Half koi, half visitors. The reference ran 74% koi, which made "it's a koi"
+ * a safe guess every time; at even odds she has to actually look. A streak of
+ * three of the same creature is broken, so the mix never settles into a pattern.
+ */
+function pickCreature(recent: Creature[]): Creature {
+  const roll = (): Creature => {
+    if (Math.random() < 0.5) return 'koi'
+    const others: Creature[] = ['silverfish', 'frog', 'turtle']
+    return others[Math.floor(Math.random() * others.length)]
+  }
+  let c = roll()
+  const [a, b] = recent.slice(-2)
+  while (a === c && b === c) c = roll()
+  return c
+}
+
+/** Where and how one leap goes. Every field is re-rolled per leap. */
+interface LeapShape {
+  x: number
+  /** Arc radius — half the leap's width, and its height. */
+  r: number
+  /** 1 = left to right, -1 = right to left. */
+  dir: 1 | -1
+  durMs: number
+}
+
+/**
+ * Shorter and quicker than the reference's single 216px / 2.9s arc, and never
+ * the same twice: radius 110–170px, 1.5–2.2s in the air. Under reduced motion
+ * she gets half as long again to see it.
+ */
+function rollLeap(reduced: boolean): LeapShape {
+  const r = Math.round(110 + Math.random() * 60)
+  const base = 1500 + Math.random() * 700
+  return {
+    // Keep the whole arc on the water, whichever size it rolled.
+    x: 300 + r + Math.random() * (840 - 2 * r),
+    r,
+    dir: Math.random() < 0.5 ? 1 : -1,
+    durMs: Math.round(reduced ? base * 1.5 : base),
+  }
 }
 
 const JUGNUS = [
@@ -363,7 +403,7 @@ export default function KoiAreJumping() {
 
   const [session, setSession] = useState<SessionPhase>('intro')
   const [round, setRound] = useState<RoundPhase>('resting')
-  const [jumpX, setJumpX] = useState(720)
+  const [leapShape, setLeapShape] = useState<LeapShape>({ x: 720, r: 150, dir: 1, durMs: 1800 })
   const [creature, setCreature] = useState<Creature>('koi')
   const [say, setSay] = useState<string | null>(null)
   const [bloom, setBloom] = useState(false)
@@ -383,9 +423,10 @@ export default function KoiAreJumping() {
   // the three things a later step in the chain must read — where the jump
   // was, what it was, and whether she already caught it — are mirrored here
   // in refs, which are always current regardless of when the closure runs.
-  const jumpXRef = useRef(720)
+  const leapRef = useRef<LeapShape>({ x: 720, r: 150, dir: 1, durMs: 1800 })
   const creatureRef = useRef<Creature>('koi')
   const tappedRef = useRef(false)
+  const reactionRef = useRef(0)
 
   const reduced =
     stillness || (typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches)
@@ -433,12 +474,12 @@ export default function KoiAreJumping() {
   /* ---------------------------------------------------------- the loop */
 
   const beginAnticipation = () => {
-    const x = 480 + Math.random() * 480
-    const c = pickCreature()
-    jumpXRef.current = x
+    const shape = rollLeap(reduced)
+    const c = pickCreature(roundsRef.current.map((r) => r.creature))
+    leapRef.current = shape
     creatureRef.current = c
     tappedRef.current = false
-    setJumpX(x)
+    setLeapShape(shape)
     setCreature(c)
     setSay(null)
     setBloom(false)
@@ -448,18 +489,18 @@ export default function KoiAreJumping() {
   }
 
   const leap = () => {
-    const x = jumpXRef.current
-    setSplashX(x - 216)
+    const { x, r, dir, durMs } = leapRef.current
+    setSplashX(x - r * dir)
     jumpStartedAt.current = Date.now()
     setRound('jumping')
     if (timer.current) window.clearTimeout(timer.current)
-    const dur = reduced ? 4200 : 2900
-    timer.current = window.setTimeout(splashDown, dur)
+    timer.current = window.setTimeout(splashDown, durMs)
   }
 
   const splashDown = () => {
     cue('pond-tap')
-    setSplashX(jumpXRef.current + 216)
+    const leapNow = leapRef.current
+    setSplashX(leapNow.x + leapNow.r * leapNow.dir)
     setRound('landing')
 
     const wasTapped = tappedRef.current
@@ -468,8 +509,11 @@ export default function KoiAreJumping() {
       {
         creature: creatureRef.current,
         wasTapped,
-        reactionMs: wasTapped ? Date.now() - jumpStartedAt.current : null,
+        reactionMs: wasTapped ? reactionRef.current : null,
         sessionTimeOfDay: timeOfDay(),
+        direction: leapNow.dir === 1 ? 'ltr' : 'rtl',
+        radiusPx: leapNow.r,
+        leapMs: leapNow.durMs,
       },
     ]
     roundCountRef.current += 1
@@ -491,6 +535,7 @@ export default function KoiAreJumping() {
   const tap = () => {
     if (round !== 'jumping' || tappedRef.current) return
     tappedRef.current = true
+    reactionRef.current = Date.now() - jumpStartedAt.current
     const isKoi = creatureRef.current === 'koi'
     setSay(sayFor(language, creatureRef.current))
     setBloom(isKoi)
@@ -507,9 +552,12 @@ export default function KoiAreJumping() {
 
   /* --------------------------------------------------------------- copy */
 
-  const exitX = jumpX - 216
-  const entryX = jumpX + 216
-  const zoneLeft = Math.round(jumpX - 280)
+  const { x: jumpX, r: leapR, dir: leapDir, durMs: leapMs } = leapShape
+  const exitX = jumpX - leapR * leapDir
+  const entryX = jumpX + leapR * leapDir
+  // The tap band spans the whole arc plus a generous margin either side.
+  const zoneW = 2 * leapR + 200
+  const zoneLeft = Math.round(jumpX - zoneW / 2)
   const showRipple = round === 'anticipation'
   const showSplash = round === 'jumping' || round === 'landing'
   const showCreature = round === 'jumping'
@@ -656,8 +704,23 @@ export default function KoiAreJumping() {
               )}
 
               {showCreature && (
-                <div style={{ position: 'absolute', left: jumpX, top: 644 }}>
-                  <span className="koi-arc" style={{ animationDuration: reduced ? '4.2s' : '2.9s' }}>
+                // A zero-size anchor at the leap's centre, so mirroring it flips
+                // both the path and the sprite about that one point — a
+                // right-to-left leap is the same leap, seen from the other bank.
+                <div
+                  style={{
+                    position: 'absolute',
+                    left: jumpX,
+                    top: 644,
+                    width: 0,
+                    height: 0,
+                    transform: leapDir === -1 ? 'scaleX(-1)' : undefined,
+                  }}
+                >
+                  <span
+                    className="koi-arc"
+                    style={{ animationDuration: `${leapMs}ms`, ['--r' as string]: leapR } as CSSProperties}
+                  >
                     <span style={{ display: 'block', marginLeft: box.ml, marginTop: box.mt }}>
                       <CreatureSprite />
                     </span>
@@ -670,7 +733,7 @@ export default function KoiAreJumping() {
                   type="button"
                   onClick={tap}
                   className="koi-zone"
-                  style={{ left: zoneLeft, minHeight: Math.max(300, tapTarget * 3) }}
+                  style={{ left: zoneLeft, width: zoneW, top: 644 - leapR - 90, height: leapR + 160, minHeight: Math.max(240, tapTarget * 3) }}
                   aria-label="Tap when something leaps"
                 />
               )}

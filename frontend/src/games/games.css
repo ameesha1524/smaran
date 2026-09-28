@@ -290,108 +290,111 @@
   outline-offset: -6px;
 }
 
-/* The leap itself: a plain semicircular arc, 216px radius, reproduced as a
-   discrete 32-step trace rather than an eased tween — the same blocky,
-   frame-by-frame motion every pixel sprite in this app moves with. */
+/* The leap itself: a nose-first semicircle — the creature leaves the water
+   pointing straight up, stays tangent to the circle, and enters nose-down.
+   Traced in 32 discrete steps rather than an eased tween (the same
+   frame-by-frame motion every pixel sprite here moves with). The radius is a
+   custom property, --r, set per leap, so every jump can be a different size
+   without a table per size. */
 @keyframes koiArc {
   0% {
-    transform: translate(-216px, 0) rotate(-90deg);
+    transform: translate(calc(var(--r) * -1px), calc(var(--r) * 0px)) rotate(-90deg);
   }
   3.125% {
-    transform: translate(-215px, -21.2px) rotate(-84.4deg);
+    transform: translate(calc(var(--r) * -0.9952px), calc(var(--r) * -0.098px)) rotate(-84.4deg);
   }
   6.25% {
-    transform: translate(-211.8px, -42.1px) rotate(-78.8deg);
+    transform: translate(calc(var(--r) * -0.9808px), calc(var(--r) * -0.1951px)) rotate(-78.8deg);
   }
   9.375% {
-    transform: translate(-206.7px, -62.7px) rotate(-73.1deg);
+    transform: translate(calc(var(--r) * -0.9569px), calc(var(--r) * -0.2903px)) rotate(-73.1deg);
   }
   12.5% {
-    transform: translate(-199.6px, -82.7px) rotate(-67.5deg);
+    transform: translate(calc(var(--r) * -0.9239px), calc(var(--r) * -0.3827px)) rotate(-67.5deg);
   }
   15.625% {
-    transform: translate(-190.5px, -101.8px) rotate(-61.9deg);
+    transform: translate(calc(var(--r) * -0.8819px), calc(var(--r) * -0.4714px)) rotate(-61.9deg);
   }
   18.75% {
-    transform: translate(-179.6px, -120px) rotate(-56.2deg);
+    transform: translate(calc(var(--r) * -0.8315px), calc(var(--r) * -0.5556px)) rotate(-56.2deg);
   }
   21.875% {
-    transform: translate(-167px, -137px) rotate(-50.6deg);
+    transform: translate(calc(var(--r) * -0.773px), calc(var(--r) * -0.6344px)) rotate(-50.6deg);
   }
   25% {
-    transform: translate(-152.7px, -152.7px) rotate(-45deg);
+    transform: translate(calc(var(--r) * -0.7071px), calc(var(--r) * -0.7071px)) rotate(-45deg);
   }
   28.125% {
-    transform: translate(-137px, -167px) rotate(-39.4deg);
+    transform: translate(calc(var(--r) * -0.6344px), calc(var(--r) * -0.773px)) rotate(-39.4deg);
   }
   31.25% {
-    transform: translate(-120px, -179.6px) rotate(-33.8deg);
+    transform: translate(calc(var(--r) * -0.5556px), calc(var(--r) * -0.8315px)) rotate(-33.8deg);
   }
   34.375% {
-    transform: translate(-101.8px, -190.5px) rotate(-28.1deg);
+    transform: translate(calc(var(--r) * -0.4714px), calc(var(--r) * -0.8819px)) rotate(-28.1deg);
   }
   37.5% {
-    transform: translate(-82.7px, -199.6px) rotate(-22.5deg);
+    transform: translate(calc(var(--r) * -0.3827px), calc(var(--r) * -0.9239px)) rotate(-22.5deg);
   }
   40.625% {
-    transform: translate(-62.7px, -206.7px) rotate(-16.9deg);
+    transform: translate(calc(var(--r) * -0.2903px), calc(var(--r) * -0.9569px)) rotate(-16.9deg);
   }
   43.75% {
-    transform: translate(-42.1px, -211.8px) rotate(-11.2deg);
+    transform: translate(calc(var(--r) * -0.1951px), calc(var(--r) * -0.9808px)) rotate(-11.2deg);
   }
   46.875% {
-    transform: translate(-21.2px, -215px) rotate(-5.6deg);
+    transform: translate(calc(var(--r) * -0.098px), calc(var(--r) * -0.9952px)) rotate(-5.6deg);
   }
   50% {
-    transform: translate(0, -216px) rotate(0deg);
+    transform: translate(calc(var(--r) * 0px), calc(var(--r) * -1px)) rotate(0deg);
   }
   53.125% {
-    transform: translate(21.2px, -215px) rotate(5.6deg);
+    transform: translate(calc(var(--r) * 0.098px), calc(var(--r) * -0.9952px)) rotate(5.6deg);
   }
   56.25% {
-    transform: translate(42.1px, -211.8px) rotate(11.2deg);
+    transform: translate(calc(var(--r) * 0.1951px), calc(var(--r) * -0.9808px)) rotate(11.2deg);
   }
   59.375% {
-    transform: translate(62.7px, -206.7px) rotate(16.9deg);
+    transform: translate(calc(var(--r) * 0.2903px), calc(var(--r) * -0.9569px)) rotate(16.9deg);
   }
   62.5% {
-    transform: translate(82.7px, -199.6px) rotate(22.5deg);
+    transform: translate(calc(var(--r) * 0.3827px), calc(var(--r) * -0.9239px)) rotate(22.5deg);
   }
   65.625% {
-    transform: translate(101.8px, -190.5px) rotate(28.1deg);
+    transform: translate(calc(var(--r) * 0.4714px), calc(var(--r) * -0.8819px)) rotate(28.1deg);
   }
   68.75% {
-    transform: translate(120px, -179.6px) rotate(33.8deg);
+    transform: translate(calc(var(--r) * 0.5556px), calc(var(--r) * -0.8315px)) rotate(33.8deg);
   }
   71.875% {
-    transform: translate(137px, -167px) rotate(39.4deg);
+    transform: translate(calc(var(--r) * 0.6344px), calc(var(--r) * -0.773px)) rotate(39.4deg);
   }
   75% {
-    transform: translate(152.7px, -152.7px) rotate(45deg);
+    transform: translate(calc(var(--r) * 0.7071px), calc(var(--r) * -0.7071px)) rotate(45deg);
   }
   78.125% {
-    transform: translate(167px, -137px) rotate(50.6deg);
+    transform: translate(calc(var(--r) * 0.773px), calc(var(--r) * -0.6344px)) rotate(50.6deg);
   }
   81.25% {
-    transform: translate(179.6px, -120px) rotate(56.2deg);
+    transform: translate(calc(var(--r) * 0.8315px), calc(var(--r) * -0.5556px)) rotate(56.2deg);
   }
   84.375% {
-    transform: translate(190.5px, -101.8px) rotate(61.9deg);
+    transform: translate(calc(var(--r) * 0.8819px), calc(var(--r) * -0.4714px)) rotate(61.9deg);
   }
   87.5% {
-    transform: translate(199.6px, -82.7px) rotate(67.5deg);
+    transform: translate(calc(var(--r) * 0.9239px), calc(var(--r) * -0.3827px)) rotate(67.5deg);
   }
   90.625% {
-    transform: translate(206.7px, -62.7px) rotate(73.1deg);
+    transform: translate(calc(var(--r) * 0.9569px), calc(var(--r) * -0.2903px)) rotate(73.1deg);
   }
   93.75% {
-    transform: translate(211.8px, -42.1px) rotate(78.8deg);
+    transform: translate(calc(var(--r) * 0.9808px), calc(var(--r) * -0.1951px)) rotate(78.8deg);
   }
   96.875% {
-    transform: translate(215px, -21.2px) rotate(84.4deg);
+    transform: translate(calc(var(--r) * 0.9952px), calc(var(--r) * -0.098px)) rotate(84.4deg);
   }
   100% {
-    transform: translate(216px, 0) rotate(90deg);
+    transform: translate(calc(var(--r) * 1px), calc(var(--r) * 0px)) rotate(90deg);
   }
 }
 
@@ -637,7 +640,7 @@
      something to look at and something to tap, just nothing moving. */
   .koi-arc {
     animation: none !important;
-    transform: translate(0, -216px) rotate(0deg) !important;
+    transform: translate(0, calc(var(--r, 150) * -1px)) rotate(0deg) !important;
   }
 }
 
@@ -663,5 +666,5 @@
 
 .px-viewport.still .koi-arc {
   animation: none !important;
-  transform: translate(0, -216px) rotate(0deg) !important;
+  transform: translate(0, calc(var(--r, 150) * -1px)) rotate(0deg) !important;
 }
