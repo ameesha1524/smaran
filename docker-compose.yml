@@ -4,9 +4,17 @@
 #   → PWA            http://localhost:8081
 #   → API            http://localhost:8080
 #
-# This is the deployment-shaped stack: PostgreSQL, Redis, the Spring Boot
-# backend, and the PWA behind nginx. For day-to-day development use the dev
-# profile instead (see README) — it needs no containers at all.
+# PostgreSQL, Redis, the Spring Boot backend, and the PWA behind nginx.
+#
+# For day-to-day development start only the database and run the backend and
+# the frontend from source:
+#
+#   docker compose up -d db
+#   cd backend && mvn spring-boot:run -Dspring-boot.run.profiles=dev
+#
+# The backend container starts in the `demo` profile by default: synthetic
+# seeded data, authentication on. Set SMARAN_PROFILE=prod for an empty,
+# production-shaped start, which also requires a real SMARAN_JWT_SECRET.
 
 services:
   db:
@@ -17,6 +25,9 @@ services:
       # Change this before anything real. The backend refuses to start with a
       # placeholder JWT secret; the database will not stop you.
       POSTGRES_PASSWORD: ${SMARAN_DB_PASSWORD:-smaran}
+    ports:
+      # Published on localhost only, for a backend run from source.
+      - "127.0.0.1:5432:5432"
     volumes:
       - db-data:/var/lib/postgresql/data
     healthcheck:
@@ -37,12 +48,15 @@ services:
       db:
         condition: service_healthy
     environment:
+      SPRING_PROFILES_ACTIVE: ${SMARAN_PROFILE:-demo}
       SMARAN_DB_URL: jdbc:postgresql://db:5432/smaran
       SMARAN_DB_USER: smaran
       SMARAN_DB_PASSWORD: ${SMARAN_DB_PASSWORD:-smaran}
       SMARAN_REDIS_HOST: redis
       # 32 bytes minimum. Generate with: openssl rand -base64 48
-      SMARAN_JWT_SECRET: ${SMARAN_JWT_SECRET:?set SMARAN_JWT_SECRET before starting}
+      # The fallback is the built-in demo value, which the backend accepts in
+      # the demo profile and refuses to start with in prod.
+      SMARAN_JWT_SECRET: ${SMARAN_JWT_SECRET:-demo-only-secret-demo-only-secret-demo-32}
       SMARAN_CORS: http://localhost:8081
       SMARAN_STORAGE: /app/storage
       # Notifications degrade to log lines until these are filled in.
