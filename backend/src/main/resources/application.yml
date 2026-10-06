@@ -102,6 +102,11 @@ management:
     web:
       exposure:
         include: health
+  health:
+    # Nothing is stored only in Redis and no code reads it, so its absence must
+    # not mark the application unhealthy.
+    redis:
+      enabled: false
 
 ---
 # ---------------------------------------------------------------------------

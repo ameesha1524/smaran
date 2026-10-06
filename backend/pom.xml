@@ -20,6 +20,14 @@
   <properties>
     <java.version>21</java.version>
     <jjwt.version>0.12.6</jjwt.version>
+    <!-- Newer than Spring Boot's managed 1.19.x: that talks Docker API 1.32,
+         which Docker Engine 29 refuses (HTTP 400), so tests could not start
+         a container on current Docker Desktop. -->
+    <testcontainers.version>1.21.4</testcontainers.version>
+    <!-- Where Maven builds. Override with -Dsmaran.build.dir=... when the
+         checkout is in a synced or indexed folder (OneDrive, an IDE) that
+         touches target/ mid-build. -->
+    <smaran.build.dir>${project.basedir}/target</smaran.build.dir>
   </properties>
 
   <dependencyManagement>
@@ -66,6 +74,13 @@
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-validation</artifactId>
+    </dependency>
+
+    <!-- /actuator/health, for the container health check and the deploy script.
+         Only `health` is exposed (application.yml). -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-actuator</artifactId>
     </dependency>
 
     <dependency>
@@ -157,6 +172,7 @@
   </dependencies>
 
   <build>
+    <directory>${smaran.build.dir}</directory>
     <plugins>
       <!-- `mvn test` runs the fast unit tests. `mvn verify` adds the *IT
            classes, which start the application on a real PostgreSQL. -->

@@ -26,8 +26,9 @@ services:
       # placeholder JWT secret; the database will not stop you.
       POSTGRES_PASSWORD: ${SMARAN_DB_PASSWORD:-smaran}
     ports:
-      # Published on localhost only, for a backend run from source.
-      - "127.0.0.1:5432:5432"
+      # Published on localhost only, for a backend run from source. Set
+      # SMARAN_DB_PORT if 5432 is taken (a local PostgreSQL service, say).
+      - "127.0.0.1:${SMARAN_DB_PORT:-5432}:5432"
     volumes:
       - db-data:/var/lib/postgresql/data
     healthcheck:
