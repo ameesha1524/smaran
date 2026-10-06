@@ -14,6 +14,7 @@ import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.smaran.domain.CognitiveObjectResult;
 import org.smaran.domain.CognitiveProfile;
+import org.smaran.domain.DomainReading;
 import org.smaran.domain.Enums.GameType;
 import org.smaran.domain.Enums.Mood;
 import org.smaran.domain.Enums.MotorTier;
@@ -29,33 +30,28 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * The five-domain profile, and the routing it drives.
+ * The six-domain profile, and the routing it drives.
  *
  * Mirror of frontend/src/lib/cognitiveProfile.ts. The device routes offline; the
  * server routes with a month of history the device does not keep. They must
  * agree on the rules, so the rules live in both places and are written the same
- * way on purpose.
+ * way on purpose. Which game reads which domain, and how a reading moves the
+ * profile, live one level down in {@link CognitiveMap}.
  *
  * deriveGameRoute, in the order the questions are asked:
+ *   0. is this one of her first two sessions?  → the onboarding, fixed
  *   1. is this within her peak window?       no → low-effort games only
+ *   4. what is her motor tier?                  → timing games filtered, tap sizes
  *   2. is today's mood anxious or low?      yes → Family Grove first, 432 Hz, −1
  *   3. which domain declined most this week?    → its game goes second
- *   4. what is her motor tier?                  → tap sizes, timing mechanics
  *   5. what phase is each family member at?     → resolved per member elsewhere
+ *
+ * Rule 4 runs before 2 and 3 (numbering kept from the design doc) so that a
+ * game filtered out for her hand cannot be reordered back in.
  */
 @Service
 @Slf4j
 public class CognitiveProfileService {
-
-    private static final List<String> DOMAINS =
-            List.of("language", "visualSemantic", "motor", "affective", "temporal");
-
-    private static final Map<String, GameType> DOMAIN_GAMES = Map.of(
-            "language", GameType.GRANDMOTHERS_TALE,
-            "visualSemantic", GameType.WEAVERS_LOOM,
-            "motor", GameType.MORNING_RITUALS,
-            "affective", GameType.FAMILY_GROVE,
-            "temporal", GameType.MORNING_RITUALS);
 
     private final CognitiveProfileRepository profiles;
     private final GameSessionRepository sessions;
@@ -96,6 +92,7 @@ public class CognitiveProfileService {
         // Nothing measures temporal orientation until Morning Rituals has run
         // once; 0.6 is honest about that rather than inventing a reading.
         m.put("temporal", 0.6);
+        m.put("executiveFunction", 0.6);
         return m;
     }
 
@@ -115,16 +112,42 @@ public class CognitiveProfileService {
 
         int hour = Instant.now().atZone(ZoneId.systemDefault()).getHour();
         boolean inPeak = profile.getSelfReportedPeak().contains(hour);
+        int tapTarget = switch (profile.getMotorTier()) {
+            case FLUID -> 60;
+            case MODERATE -> 76;
+            case SUPPORTED -> 96;
+        };
+
+        // 0. The first two sessions are the onboarding: fixed, gentle, observed.
+        long played = sessions.countByPatientId(patientId);
+        if (played < 2) {
+            boolean first = played == 0;
+            rationale.add(first
+                    ? "First session — Duck Roll Call at span 3. This is the onboarding: working-memory span, tap accuracy and hesitation are read here."
+                    : "Second session — the Family Grove at phase 1, names visible. Affect is read here.");
+            return new Dto.GameRouteDto(
+                    patientId,
+                    List.of(first ? GameType.DUCK_ROLL_CALL : GameType.FAMILY_GROVE),
+                    1,
+                    first ? 432 : 528,
+                    tapTarget,
+                    inPeak,
+                    rationale);
+        }
+
         int tier = 2;
         int ambientHz = 432;
-
-        List<GameType> games = new ArrayList<>(
-                List.of(GameType.WEAVERS_LOOM, GameType.GRANDMOTHERS_TALE, GameType.FAMILY_GROVE, GameType.MORNING_RITUALS));
+        List<GameType> games = new ArrayList<>(CognitiveMap.ROUTE_GAMES);
 
         if (!inPeak) {
-            games.removeIf(g -> g != GameType.FAMILY_GROVE && g != GameType.MORNING_RITUALS);
+            games.retainAll(CognitiveMap.LOW_EFFORT);
             tier -= 1;
             rationale.add("Outside the peak window — only low-effort games are offered.");
+        }
+
+        if (profile.getMotorTier() == MotorTier.SUPPORTED) {
+            games.removeAll(CognitiveMap.TIMING_GAMES);
+            rationale.add("Motor tier is supported — timing-based games are not suggested.");
         }
 
         Mood mood = moodToday != null ? moodToday : latestMood(patientId);
@@ -140,7 +163,7 @@ public class CognitiveProfileService {
         }
 
         weakestDomain(patientId).ifPresent(domain -> {
-            GameType target = DOMAIN_GAMES.get(domain);
+            GameType target = CognitiveMap.DOMAIN_GAME.get(domain);
             if (target != null && games.contains(target)) {
                 games.remove(target);
                 games.add(Math.min(1, games.size()), target);
@@ -148,15 +171,8 @@ public class CognitiveProfileService {
             }
         });
 
-        int tapTarget = switch (profile.getMotorTier()) {
-            case FLUID -> 60;
-            case MODERATE -> 76;
-            case SUPPORTED -> 96;
-        };
-        if (profile.getMotorTier() == MotorTier.SUPPORTED) {
-            rationale.add("Motor tier is supported — timing-based mechanics are switched off.");
-        }
-        rationale.add("Tap targets set to %d px.".formatted(tapTarget));
+        rationale.add("Tap targets set to %d px for a %s hand.".formatted(
+                tapTarget, profile.getMotorTier().name().toLowerCase()));
 
         return new Dto.GameRouteDto(
                 patientId,
@@ -179,22 +195,14 @@ public class CognitiveProfileService {
     /* ------------------------------------------------- update per session */
 
     /**
-     * Applied after every session. An exponential moving average, weighted 3:1
-     * toward history, so that one bad afternoon never rewrites a person.
+     * Applied after every session: the session's readings, folded in by the one
+     * confidence-weighted EMA in {@link CognitiveMap}. At full confidence that
+     * is 3:1 toward history, so one bad afternoon never rewrites a person.
      */
     @Transactional
     public CognitiveProfile updateFromSession(GameSession session) {
         CognitiveProfile profile = forPatient(session.getPatientId());
-        Map<String, Double> scores = new LinkedHashMap<>(scores(profile));
-
-        String domain = switch (session.getGameType()) {
-            case WEAVERS_LOOM -> "visualSemantic";
-            case GRANDMOTHERS_TALE -> "language";
-            case FAMILY_GROVE -> "affective";
-            case MORNING_RITUALS -> "temporal";
-        };
-        double prior = scores.getOrDefault(domain, 0.6);
-        scores.put(domain, round(prior * 0.75 + session.getCompletionRate() * 0.25));
+        Map<String, Double> scores = CognitiveMap.apply(scores(profile), readingsOf(session));
 
         // Hesitation and easing are motor and affective signals in their own
         // right, independent of which game produced them.
@@ -281,28 +289,29 @@ public class CognitiveProfileService {
         if (week.size() < 3) {
             return java.util.Optional.empty();
         }
-        Map<String, List<Double>> byDomain = new HashMap<>();
-        for (GameSession s : week) {
-            String domain = switch (s.getGameType()) {
-                case WEAVERS_LOOM -> "visualSemantic";
-                case GRANDMOTHERS_TALE -> "language";
-                case FAMILY_GROVE -> "affective";
-                case MORNING_RITUALS -> "temporal";
-            };
-            byDomain.computeIfAbsent(domain, k -> new ArrayList<>()).add(s.getCompletionRate());
-        }
-        return byDomain.entrySet().stream()
-                .filter(e -> e.getValue().size() >= 2)
-                .map(e -> Map.entry(e.getKey(), trendOf(e.getValue())))
-                // Most negative trend first; ignore anything that is holding.
-                .filter(e -> e.getValue() < -0.05)
-                .min(Comparator.comparingDouble(Map.Entry::getValue))
-                .map(Map.Entry::getKey);
+        List<CognitiveMap.Dated> history = week.stream()
+                .map(s -> new CognitiveMap.Dated(s.getStartedAt(), readingsOf(s)))
+                .toList();
+        return CognitiveMap.weakestDomain(history, Instant.now());
     }
 
-    /** Last value minus first: a blunt instrument, and the right one at n < 10. */
-    private static double trendOf(List<Double> values) {
-        return values.get(values.size() - 1) - values.get(0);
+    /**
+     * The readings a stored session contributed. Sessions stored before
+     * readings existed fall back to completion rate against the game's
+     * primary domain — the same answer they gave at the time.
+     */
+    public Map<String, DomainReading> readingsOf(GameSession session) {
+        Map<String, DomainReading> stored = null;
+        String raw = session.getDomainReadings();
+        if (raw != null && !raw.isBlank()) {
+            try {
+                stored = json.readValue(raw, new TypeReference<Map<String, DomainReading>>() {
+                });
+            } catch (Exception e) {
+                log.warn("unreadable session readings on {}, using completion rate: {}", session.getId(), e.getMessage());
+            }
+        }
+        return CognitiveMap.readingsFor(session.getGameType(), session.getCompletionRate(), stored);
     }
 
     /* ---------------------------------------------------------- mapping */
@@ -322,7 +331,7 @@ public class CognitiveProfileService {
     }
 
     public List<String> domains() {
-        return DOMAINS;
+        return CognitiveMap.DOMAINS;
     }
 
     /* --------------------------------------------------------- plumbing */

@@ -70,5 +70,24 @@ public class GameSession {
     @Column(nullable = false)
     private boolean easedMidSession = false;
 
+    /**
+     * The domain readings the profile was updated from, as JSON:
+     * {@code {"motor":{"score":0.72,"confidence":1.0}}}. Always the resolved
+     * set (see CognitiveMap#readingsFor), so the dashboard trend and the
+     * weakest-domain rule read exactly what the profile update read. Null only
+     * on rows stored before readings existed; those fall back to completion
+     * rate against the game's primary domain.
+     */
+    @Column(columnDefinition = "text")
+    private String domainReadings;
+
+    /**
+     * Game-specific raw measures — span history, reaction times, the pond's
+     * behavioural breakdown — as opaque JSON for the caregiver view. Never
+     * read by the profile update.
+     */
+    @Column(columnDefinition = "text")
+    private String metrics;
+
     private Instant receivedAt = Instant.now();
 }

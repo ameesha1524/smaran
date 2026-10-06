@@ -16,4 +16,7 @@ public interface GameSessionRepository extends JpaRepository<GameSession, String
     List<GameSession> findTop50ByPatientIdOrderByStartedAtDesc(String patientId);
 
     long countByPatientIdAndStartedAtAfter(String patientId, Instant after);
+
+    /** The first two sessions are the onboarding; routing needs to know where she is. */
+    long countByPatientId(String patientId);
 }

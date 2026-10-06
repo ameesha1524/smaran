@@ -20,7 +20,7 @@ class GardenStateServiceTest {
     @Test
     @DisplayName("showing up at all waters the garden")
     void floorIsOne() {
-        assertTrue(GardenStateService.growthFor(GameType.WEAVERS_LOOM, 0.0) >= 1);
+        assertTrue(GardenStateService.growthFor(GameType.DUCK_ROLL_CALL, 0.0) >= 1);
         assertTrue(GardenStateService.growthFor(GameType.MORNING_RITUALS, 0.1) >= 1);
     }
 
@@ -29,7 +29,7 @@ class GardenStateServiceTest {
     void groveEarnsMore() {
         assertTrue(
                 GardenStateService.growthFor(GameType.FAMILY_GROVE, 1.0)
-                        > GardenStateService.growthFor(GameType.WEAVERS_LOOM, 1.0));
+                        > GardenStateService.growthFor(GameType.DUCK_ROLL_CALL, 1.0));
     }
 
     @Test

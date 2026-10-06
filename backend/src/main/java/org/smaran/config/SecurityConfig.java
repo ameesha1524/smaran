@@ -52,6 +52,14 @@ public class SecurityConfig {
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> {
                     auth.requestMatchers("/api/auth/**", "/actuator/health", "/ws/**").permitAll();
+                    // Spring re-dispatches a thrown status to /error without the
+                    // caller's token. Left closed, every 404 and 401 above came
+                    // back as a bare 403 — including the deliberate "404, not
+                    // 403" in AccessGuard, and a wrong pairing code.
+                    auth.requestMatchers("/error").permitAll();
+                    // A tablet redeeming a pairing code has no token yet — the
+                    // code is the credential, and PairingService rate-limits it.
+                    auth.requestMatchers(HttpMethod.POST, "/api/devices/redeem").permitAll();
                     auth.requestMatchers(HttpMethod.OPTIONS, "/**").permitAll();
                     if (openDemo) {
                         auth.anyRequest().permitAll();

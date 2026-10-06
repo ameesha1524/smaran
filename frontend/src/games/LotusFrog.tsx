@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Game } from './lotus-frog/engine/Game'
 import { ambience } from './lotus-frog/audio/Ambience'
-import { applyFrogReport, toSessionDraft } from './lotus-frog/cognitive/smaran'
+import { toSessionDraft } from './lotus-frog/cognitive/smaran'
 import type { FrogSessionReport } from './lotus-frog/cognitive/report'
 import { useSmaran } from '../state/SmaranContext'
 
@@ -12,9 +12,10 @@ import { useSmaran } from '../state/SmaranContext'
  *
  * Underneath, the game's CognitiveTracker watches the whole visit (how quickly
  * she spots a bug, how cleanly she taps, whether she plays or drifts off) and
- * hands back one report when she leaves. That report is folded into her
- * cognitive profile with a confidence-weighted EMA (see cognitive/smaran.ts).
- * She is never shown any of it.
+ * hands back one report when she leaves. Its four domain readings travel on
+ * the session like any other game's and are folded in by the same EMA
+ * (lib/cognitiveMap.ts), on the device and again on the server. She is never
+ * shown any of it.
  *
  * The game is a self-contained canvas engine; this screen only mounts it,
  * gives her a way home, and closes the session on the way out.
@@ -42,13 +43,9 @@ function saveReport(report: FrogSessionReport): void {
 export default function LotusFrog() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const navigate = useNavigate()
-  const { profile, setProfile, completeSession, moodToday } = useSmaran()
+  const { completeSession, moodToday } = useSmaran()
 
   // The game outlives several renders; read the latest of each at session end.
-  const profileRef = useRef(profile)
-  profileRef.current = profile
-  const setProfileRef = useRef(setProfile)
-  setProfileRef.current = setProfile
   const completeRef = useRef(completeSession)
   completeRef.current = completeSession
   const moodRef = useRef(moodToday)
@@ -60,18 +57,14 @@ export default function LotusFrog() {
 
     const game = new Game(canvas, undefined, undefined, (report) => {
       if (report.durationMs < MIN_SESSION_MS) return
-      // Order matters: fold the four-domain reading in first, then let
-      // completeSession water the garden and count the visit. The reverse
-      // would have completeSession write back a profile captured before this.
-      const next = applyFrogReport(profileRef.current, report)
-      setProfileRef.current(next)
       saveReport(report)
       // A visit with no mood recorded is still a visit; the pond is calm by
       // nature, so that is the honest default rather than leaving it unset.
-      void completeRef.current(toSessionDraft(report, moodRef.current ?? 'PEACEFUL'))
+      const draft = toSessionDraft(report, moodRef.current ?? 'PEACEFUL')
+      void completeRef.current(draft)
       if (import.meta.env.DEV) {
         console.info('[lotus-frog] session report', report)
-        console.info('[lotus-frog] profile domains →', next.domainScores)
+        console.info('[lotus-frog] domain readings →', draft.domainReadings)
       }
     })
     game.start()

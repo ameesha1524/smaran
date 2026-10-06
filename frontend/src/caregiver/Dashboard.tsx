@@ -12,6 +12,7 @@ import {
 } from 'recharts'
 import { caregiver } from '../lib/api'
 import { sampleDashboard } from './sampleDashboard'
+import PairingPanel from './PairingPanel'
 import { useSmaran } from '../state/SmaranContext'
 import { bloomCopy } from '../lib/gardenEngine'
 import type { DashboardAlert, DashboardSummary, GameType, GrovePhase } from '../lib/types'
@@ -256,7 +257,8 @@ export default function Dashboard() {
                 {data.perGame.map((g) => (
                   <tr key={g.gameType} style={{ borderTop: '1px solid rgba(221,234,248,0.12)' }}>
                     <td className="py-2" style={{ fontSize: 16 }}>
-                      {GAME_NAMES[g.gameType]}
+                      {/* A retired game's history (the Weaver's Loom) still arrives from the server. */}
+                      {GAME_NAMES[g.gameType] ?? retiredName(g.gameType)}
                     </td>
                     <td style={{ fontSize: 16 }}>{g.sessions}</td>
                     <td style={{ fontSize: 16 }}>{Math.round(g.avgScore * 100)}%</td>
@@ -326,6 +328,8 @@ export default function Dashboard() {
               </ResponsiveContainer>
             </div>
           </section>
+
+          <PairingPanel patientId={patient.id} />
         </div>
 
         <footer className="pb-8 pt-2 font-sans" style={{ fontSize: 13, color: 'var(--chalk-dim)', opacity: 0.55 }}>
@@ -349,6 +353,11 @@ function Stat({ label, value }: { label: string; value: string }) {
       </p>
     </div>
   )
+}
+
+function retiredName(key: string): string {
+  const name = key.toLowerCase().replace(/_/g, ' ')
+  return `${name.charAt(0).toUpperCase()}${name.slice(1)} (retired)`
 }
 
 function relative(iso: string): string {

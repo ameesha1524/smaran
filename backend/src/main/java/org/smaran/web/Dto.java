@@ -3,6 +3,7 @@ package org.smaran.web;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import org.smaran.domain.DomainReading;
 import org.smaran.domain.Enums.AlertLevel;
 import org.smaran.domain.Enums.GameType;
 import org.smaran.domain.Enums.Mood;
@@ -94,7 +95,11 @@ public final class Dto {
             int difficultyTier,
             double cognitiveLoadScore,
             Mood moodAtStart,
-            List<ObjectResultDto> objectResults) {
+            List<ObjectResultDto> objectResults,
+            /** Optional. Absent → completion rate against the game's primary domain. */
+            Map<String, DomainReading> domainReadings,
+            /** Optional, opaque, caregiver-view only. */
+            Map<String, Object> metrics) {
     }
 
     /* ----------------------------------------------------------- garden */
@@ -207,7 +212,8 @@ public final class Dto {
             double visualSemantic,
             double motor,
             double affective,
-            double temporal) {
+            double temporal,
+            double executiveFunction) {
     }
 
     public record HeatPoint(String date, long minutes) {
@@ -246,6 +252,26 @@ public final class Dto {
     }
 
     public record TriggerRequest(String patientId) {
+    }
+
+    /* ---------------------------------------------------------- pairing */
+
+    /** The code is returned once, formatted {@code XXXX-XXXX}; only its hash is stored. */
+    public record PairingCodeDto(String code, Instant expiresAt) {
+    }
+
+    public record RedeemRequest(String code, String deviceLabel) {
+    }
+
+    public record RedeemResponse(
+            String deviceToken,
+            String deviceId,
+            String patientId,
+            Instant expiresAt,
+            PatientDto patient) {
+    }
+
+    public record DeviceDto(String id, String label, Instant pairedAt, Instant lastSeenAt, Instant expiresAt) {
     }
 
     /* -------------------------------------------------- mood check-in */

@@ -62,6 +62,27 @@ public class JwtService {
                 .compact();
     }
 
+    /**
+     * The tablet's token, minted once when a pairing code is redeemed.
+     *
+     * It carries the PATIENT role scoped to exactly one patient, and a
+     * {@code did} claim naming the pairing row, so that the family removing the
+     * tablet ends its access on the next request (see JwtAuthFilter). It is
+     * never refreshed: it lasts until it expires or is removed.
+     */
+    public String issueDevice(String patientId, String deviceId, Instant expiresAt) {
+        return Jwts.builder()
+                .subject(patientId)
+                .claim("role", "PATIENT")
+                .claim("patients", List.of(patientId))
+                .claim("did", deviceId)
+                .claim("typ", "device")
+                .issuedAt(Date.from(Instant.now()))
+                .expiration(Date.from(expiresAt))
+                .signWith(key)
+                .compact();
+    }
+
     /** Returns null rather than throwing: an invalid token is just anonymous. */
     public Claims parse(String token) {
         try {

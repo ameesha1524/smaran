@@ -14,7 +14,10 @@ import type {
   GameSession,
   GardenState,
   MeaningfulObject,
+  PairedDevice,
+  PairingCode,
   Patient,
+  RedeemResult,
   ReminderSchedule,
   CognitiveProfile,
 } from './types'
@@ -241,6 +244,63 @@ export const caregiver = {
     request<MeaningfulObject[]>(`/api/patient/${patientId}/objects`, {
       method: 'PUT',
       body: JSON.stringify(objects),
+    }),
+}
+
+/* ------------------------------------------------------------ pairing */
+
+/** Why a pairing call failed, in terms the screen can turn into a sentence. */
+export type PairingFailure = 'offline' | 'invalid' | 'rate-limited' | 'forbidden' | 'unknown'
+
+export class PairingError extends Error {
+  constructor(readonly reason: PairingFailure) {
+    super(reason)
+  }
+}
+
+/**
+ * Pairing is the one flow that must not fall back to a cache or a queue: a
+ * code either works now, against the server, or it doesn't. So these calls
+ * throw a PairingError the screen can explain, instead of going through
+ * `request` and its quiet offline behaviour.
+ */
+async function pairingCall<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const token = getToken()
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  if (token) headers.Authorization = `Bearer ${token}`
+  let res: Response
+  try {
+    res = await fetch(path, { ...init, headers })
+  } catch {
+    throw new PairingError('offline')
+  }
+  if (res.status === 429) throw new PairingError('rate-limited')
+  if (res.status === 400 || res.status === 404 || res.status === 410) throw new PairingError('invalid')
+  if (res.status === 401 || res.status === 403) throw new PairingError('forbidden')
+  // A dev proxy with no backend behind it answers 5xx rather than failing the fetch.
+  if (res.status >= 500) throw new PairingError('offline')
+  if (!res.ok) throw new PairingError('unknown')
+  if (res.status === 204) return undefined as T
+  return (await res.json()) as T
+}
+
+export const pairing = {
+  /** Family side: a fresh one-time code. Any earlier unused code stops working. */
+  createCode: (patientId: string) =>
+    pairingCall<PairingCode>(`/api/patients/${encodeURIComponent(patientId)}/pairing-codes`, { method: 'POST' }),
+  /** Family side: tablets currently holding a live device token. */
+  devices: (patientId: string) =>
+    pairingCall<PairedDevice[]>(`/api/patients/${encodeURIComponent(patientId)}/devices`),
+  revoke: (patientId: string, deviceId: string) =>
+    pairingCall<void>(
+      `/api/patients/${encodeURIComponent(patientId)}/devices/${encodeURIComponent(deviceId)}`,
+      { method: 'DELETE' },
+    ),
+  /** Tablet side: trade a code for a device token. Works without being signed in. */
+  redeem: (code: string, deviceLabel: string) =>
+    pairingCall<RedeemResult>('/api/devices/redeem', {
+      method: 'POST',
+      body: JSON.stringify({ code, deviceLabel }),
     }),
 }
 

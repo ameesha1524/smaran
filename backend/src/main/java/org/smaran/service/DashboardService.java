@@ -123,34 +123,45 @@ public class DashboardService {
     }
 
     /**
-     * One point per day per domain. Days with no session inherit the previous
-     * day's value rather than dropping to zero — a rest day is not a decline,
-     * and a chart that says otherwise would be lying to a frightened relative.
+     * One point per day per domain, from the same readings the profile update
+     * used — so a Lotus Frog visit lands on four lines, not one. Within a day,
+     * readings are averaged weighted by confidence. Days with no reading for a
+     * domain inherit the previous value rather than dropping to zero — a rest
+     * day is not a decline, and a chart that says otherwise would be lying to a
+     * frightened relative.
      */
     private List<Dto.DomainPoint> domainTrend(List<GameSession> month) {
-        Map<String, Map<String, List<Double>>> byDay = new TreeMap<>();
+        // day → domain → {Σ score·confidence, Σ confidence}
+        Map<String, Map<String, double[]>> byDay = new TreeMap<>();
         for (GameSession s : month) {
-            String day = DAY.format(s.getStartedAt());
-            String domain = domainOf(s.getGameType());
-            byDay.computeIfAbsent(day, d -> new LinkedHashMap<>())
-                    .computeIfAbsent(domain, d -> new ArrayList<>())
-                    .add(s.getCompletionRate());
+            Map<String, double[]> sums = byDay.computeIfAbsent(DAY.format(s.getStartedAt()), d -> new LinkedHashMap<>());
+            profiles.readingsOf(s).forEach((domain, r) -> {
+                double[] acc = sums.computeIfAbsent(domain, k -> new double[2]);
+                acc[0] += r.score() * r.confidence();
+                acc[1] += r.confidence();
+            });
         }
 
         List<Dto.DomainPoint> out = new ArrayList<>();
-        Map<String, Double> carry = new LinkedHashMap<>(
-                Map.of("language", 0.6, "visualSemantic", 0.6, "motor", 0.6, "affective", 0.7, "temporal", 0.6));
+        Map<String, Double> carry = new LinkedHashMap<>();
+        for (String d : CognitiveMap.DOMAINS) {
+            carry.put(d, d.equals("affective") ? 0.7 : CognitiveMap.NEUTRAL);
+        }
 
-        for (Map.Entry<String, Map<String, List<Double>>> day : byDay.entrySet()) {
-            day.getValue().forEach((domain, values) ->
-                    carry.put(domain, values.stream().mapToDouble(Double::doubleValue).average().orElse(carry.get(domain))));
+        for (Map.Entry<String, Map<String, double[]>> day : byDay.entrySet()) {
+            day.getValue().forEach((domain, acc) -> {
+                if (acc[1] > 0) {
+                    carry.put(domain, round(acc[0] / acc[1]));
+                }
+            });
             out.add(new Dto.DomainPoint(
                     day.getKey(),
                     carry.get("language"),
                     carry.get("visualSemantic"),
                     carry.get("motor"),
                     carry.get("affective"),
-                    carry.get("temporal")));
+                    carry.get("temporal"),
+                    carry.get("executiveFunction")));
         }
         return out;
     }
@@ -264,15 +275,6 @@ public class DashboardService {
     }
 
     /* ----------------------------------------------------------- helpers */
-
-    static String domainOf(GameType type) {
-        return switch (type) {
-            case WEAVERS_LOOM -> "visualSemantic";
-            case GRANDMOTHERS_TALE -> "language";
-            case FAMILY_GROVE -> "affective";
-            case MORNING_RITUALS -> "temporal";
-        };
-    }
 
     private static double round(double v) {
         return Math.round(v * 1000d) / 1000d;

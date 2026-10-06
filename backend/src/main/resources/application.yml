@@ -46,6 +46,16 @@ smaran:
     refresh-ttl-days: 7
     open-demo: false
 
+  pairing:
+    # A code is read off one phone and typed into a tablet in the same room.
+    code-ttl-minutes: 10
+    # The tablet's token. Long, because a locked-out patient cannot recover an
+    # account; the family removes a tablet rather than waiting for this.
+    device-ttl-days: 180
+    # Failed redemptions allowed per client address per window.
+    max-failures: 10
+    failure-window-minutes: 15
+
   cors:
     allowed-origins: ${SMARAN_CORS:http://localhost:5173}
 

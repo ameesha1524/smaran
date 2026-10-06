@@ -1,64 +1,42 @@
-// Bridge from a Lotus Frog session report into Smaran's cognitive profile.
+// Bridge from a Lotus Frog session report into Smaran's session model.
 //
 // The frog game is self-contained (per the design), so this file is the ONLY
-// place that knows about Smaran's shapes. Inside Smaran it imports the real
-// types from `frontend/src/lib/types`.
+// place that knows about Smaran's shapes.
 //
-// It does two jobs:
-//   · applyFrogReport — fold the five-domain reading into an existing profile
-//     with a confidence-weighted EMA (a thin, low-confidence reading barely
-//     nudges; a rich one moves it like a normal Smaran session would);
-//   · toSessionDraft — shape the report as the SessionResultDraft that Smaran's
-//     completeSession() consumes, so a frog visit waters the garden and counts
-//     towards sessionCount like any other session.
+// The pond does not update the profile itself. It turns its report into the
+// same thing every other game produces — domain readings on a session draft —
+// and completeSession() folds those in with the one confidence-weighted EMA in
+// lib/cognitiveMap.ts. On the server, SessionService applies the same readings
+// through CognitiveMap.java, so the device and the server agree about a pond
+// visit exactly as they do about a Duck Roll Call round.
 
 import type { CogDomain } from "./domains";
 import { COG_DOMAINS } from "./domains";
 import type { FrogSessionReport } from "./report";
 
-// ── Smaran's own types (the game now lives inside the Smaran frontend) ─────
-
 import type {
-  CognitiveProfile,
-  DomainScores,
+  DomainReadings,
   MoodKey,
   SessionResultDraft,
 } from "../../../lib/types";
 
-// ── The EMA blend ────────────────────────────────────────────────────────────
+/** An abandoned visit is signal-poor: every reading counts for 40% as much. */
+const ABANDON_DAMP = 0.4;
 
 /**
- * Smaran's own updateProfile moves a single domain by `prior·0.75 + new·0.25`.
- * We match that ceiling — a fully-confident frog reading moves a domain by the
- * same 0.25 — but scale the step by the reading's confidence, so a short or
- * distracted visit changes the profile only a little. `language` is never
- * touched (the pond doesn't exercise it, so its reading is always null).
- *
- * @param baseAlpha the maximum weight a full-confidence reading gets (default
- *                  0.25, to sit exactly alongside Smaran's existing sessions).
+ * The report's per-domain readings, as Smaran readings. Domains the pond did
+ * not measure (always `language`) are left out rather than sent as null, and
+ * abandonment is folded into confidence — the EMA then does the rest.
  */
-export function applyFrogReport(
-  profile: CognitiveProfile,
-  report: FrogSessionReport,
-  baseAlpha = 0.25,
-): CognitiveProfile {
-  // An abandoned visit is signal-poor; let it nudge only very gently.
-  const abandonDamp = report.abandoned ? 0.4 : 1;
-
-  const next: DomainScores = { ...profile.domainScores };
+export function frogReadings(report: FrogSessionReport): DomainReadings {
+  const damp = report.abandoned ? ABANDON_DAMP : 1;
+  const out: DomainReadings = {};
   for (const d of COG_DOMAINS as CogDomain[]) {
     const reading = report.domains[d];
-    if (reading.score === null || reading.confidence <= 0) continue; // e.g. language
-    const alpha = baseAlpha * reading.confidence * abandonDamp;
-    const prior = next[d];
-    next[d] = round(prior * (1 - alpha) + reading.score * alpha);
+    if (reading.score === null || reading.confidence <= 0) continue;
+    out[d] = { score: reading.score, confidence: reading.confidence * damp };
   }
-
-  return {
-    ...profile,
-    domainScores: next,
-    updatedAt: report.endedAt,
-  };
+  return out;
 }
 
 /**
@@ -66,12 +44,8 @@ export function applyFrogReport(
  *
  * `difficultyTier` is fixed at 1: the pond has no tiers, it just flourishes,
  * and a stable value keeps frog visits from perturbing Smaran's tier logic.
- *
- * Note that completeSession() will NOT re-derive domain scores from this draft
- * — updateProfile() deliberately returns early for LOTUS_FROG, because
- * applyFrogReport above has already folded in a far richer four-domain reading.
- * This draft exists to water the garden, advance sessionCount, and give the
- * session history a row.
+ * `metrics` carries the raw behavioural breakdown and the neutral highlights,
+ * for the caregiver view — never the patient's.
  */
 export function toSessionDraft(
   report: FrogSessionReport,
@@ -85,9 +59,7 @@ export function toSessionDraft(
     difficultyTier: 1,
     cognitiveLoadScore: report.cognitiveLoadScore,
     moodAtStart,
+    domainReadings: frogReadings(report),
+    metrics: { ...report.raw, abandoned: report.abandoned, highlights: report.highlights },
   };
-}
-
-function round(n: number): number {
-  return Number(n.toFixed(3));
 }
