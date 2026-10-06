@@ -8,7 +8,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -18,42 +17,13 @@ import org.smaran.domain.DomainReading;
 import org.smaran.domain.Enums.GameType;
 
 /**
- * The cognitive map's promises, as tests — and the parity vectors written at
- * the bottom of frontend/src/lib/cognitiveMap.ts, asserted to the same numbers.
- * If one of these changes, the TypeScript copy must change with it.
+ * The cognitive map's promises, as tests: what a session measured, which game
+ * reads which domain, and the weakest-domain rule. How a reading moves the
+ * profile is the scoring engine's business and is tested in org.smaran.scoring.
  */
 class CognitiveMapTest {
 
-    private static Map<String, Double> neutral() {
-        Map<String, Double> m = new LinkedHashMap<>();
-        for (String d : CognitiveMap.DOMAINS) {
-            m.put(d, 0.6);
-        }
-        return m;
-    }
-
     /* -------------------------------------------------------- parity */
-
-    @Test
-    @DisplayName("parity: full confidence is exactly the old 0.75/0.25 rule")
-    void fullConfidence() {
-        var next = CognitiveMap.apply(neutral(), Map.of("motor", new DomainReading(1, 1)));
-        assertEquals(0.7, next.get("motor"));
-    }
-
-    @Test
-    @DisplayName("parity: half confidence moves half as far")
-    void halfConfidence() {
-        var next = CognitiveMap.apply(neutral(), Map.of("motor", new DomainReading(1, 0.5)));
-        assertEquals(0.65, next.get("motor"));
-    }
-
-    @Test
-    @DisplayName("parity: a zero score at full confidence")
-    void zeroScore() {
-        var next = CognitiveMap.apply(neutral(), Map.of("motor", new DomainReading(0, 1)));
-        assertEquals(0.45, next.get("motor"));
-    }
 
     @Test
     @DisplayName("parity: a game with no readings reads completion rate against its primary domain")
@@ -67,27 +37,6 @@ class CognitiveMapTest {
     void clamped() {
         var r = CognitiveMap.sanitize(Map.of("motor", new DomainReading(1.4, 2)));
         assertEquals(new DomainReading(1, 1), r.get("motor"));
-    }
-
-    /* -------------------------------------------------------- update */
-
-    @Test
-    @DisplayName("domains a session did not read are left exactly as they were")
-    void untouched() {
-        var before = neutral();
-        before.put("language", 0.83);
-        var next = CognitiveMap.apply(before, Map.of("motor", new DomainReading(1, 1)));
-        assertEquals(0.83, next.get("language"));
-        assertEquals(0.6, next.get("executiveFunction"));
-    }
-
-    @Test
-    @DisplayName("a domain the profile has never held starts from neutral, not zero")
-    void missingPrior() {
-        Map<String, Double> old = new HashMap<>(neutral());
-        old.remove("executiveFunction"); // a profile stored before Domain 6 existed
-        var next = CognitiveMap.apply(old, Map.of("executiveFunction", new DomainReading(1, 1)));
-        assertEquals(0.7, next.get("executiveFunction"));
     }
 
     @Test

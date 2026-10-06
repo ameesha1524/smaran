@@ -67,6 +67,7 @@ public final class Dto {
     public record CognitiveProfileDto(
             String patientId,
             Map<String, Double> domainScores,
+            Map<String, org.smaran.scoring.Contract.TargetState> scoring,
             MotorTier motorTier,
             double anxietyThreshold,
             int startingPhase,

@@ -16,26 +16,18 @@ import org.smaran.domain.DomainReading;
 import org.smaran.domain.Enums.GameType;
 
 /**
- * The cognitive map: which game reads which domain, and how a session's reading
- * moves the profile.
+ * The cognitive map: which game reads which domain, and what a session
+ * measured.
  *
- * Mirror of frontend/src/lib/cognitiveMap.ts. Every session goes through the
- * same two steps on both sides:
+ * Mirror of frontend/src/lib/cognitiveMap.ts.
  *
- * <ol>
- *   <li>{@link #readingsFor} — the session's own readings if it sent any
- *       (Duck Roll Call, Koi Are Jumping and the Lotus Frog do), otherwise its
- *       completion rate against the game's primary domain.</li>
- *   <li>{@link #apply} — one exponential moving average for everything. A
- *       domain moves at most {@link #MAX_STEP} toward the new score, scaled by
- *       confidence. At full confidence that is exactly {@code prior·0.75 +
- *       score·0.25}, the rule every game used before.</li>
- * </ol>
+ * {@link #readingsFor} answers what a session measured: its own readings if it
+ * sent any (Duck Roll Call, Koi Are Jumping and the Lotus Frog do), otherwise
+ * its completion rate against the game's primary domain. How a reading then
+ * moves the profile is not decided here; that is
+ * {@link org.smaran.scoring.CognitiveScoringService}, the single scoring path.
  *
- * The device resolves readings once and sends them; this class applies the same
- * filter to what arrives, so the device's profile and the server's cannot
- * diverge. Pure functions only — no repositories, no clock of its own — so the
- * parity with the TypeScript copy is asserted directly by CognitiveMapTest.
+ * Pure functions only — no repositories, no clock of its own.
  */
 // The retired WEAVERS_LOOM is referenced on purpose: its stored sessions still map to a domain.
 @SuppressWarnings("deprecation")
@@ -47,11 +39,8 @@ public final class CognitiveMap {
     public static final List<String> DOMAINS =
             List.of("language", "visualSemantic", "motor", "affective", "temporal", "executiveFunction");
 
-    /** The most a single, fully confident session can move a domain. */
-    public static final double MAX_STEP = 0.25;
-
     /** Where a domain starts when nothing has measured it yet. */
-    public static final double NEUTRAL = 0.6;
+    public static final double NEUTRAL = 0.5;
 
     private static final Map<GameType, String> PRIMARY = new EnumMap<>(GameType.class);
 
@@ -132,18 +121,6 @@ public final class CognitiveMap {
             return clean;
         }
         return sanitize(Map.of(domain, new DomainReading(completionRate, 1)));
-    }
-
-    /** The one EMA. Domains the session did not read are left exactly as they were. */
-    public static Map<String, Double> apply(Map<String, Double> scores, Map<String, DomainReading> readings) {
-        Map<String, Double> next = new LinkedHashMap<>(scores);
-        sanitize(readings).forEach((d, r) -> {
-            double alpha = MAX_STEP * r.confidence();
-            Double prior = next.get(d);
-            double p = prior != null && Double.isFinite(prior) ? prior : NEUTRAL;
-            next.put(d, round(p * (1 - alpha) + r.score() * alpha));
-        });
-        return next;
     }
 
     /* ---------------------------------------------------- weakest domain */
