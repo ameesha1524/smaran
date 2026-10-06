@@ -10,7 +10,7 @@ Last updated: 2026-10-06 (end of Phase 1).
 | Phase | Status | Branch | Notes |
 |---|---|---|---|
 | 0. Recon, baseline, plan | **Done** | `phase-0-recon` | PR #1, open. Plan in `docs/PLAN.md` |
-| 1. Foundation: database, contracts, scoring | **P0 and P1 done** | `phase-1-foundation` | PR #2, open, CI green. `docker compose` unverified (below) |
+| 1. Foundation: database, contracts, scoring | **P0 and P1 done** | `phase-1-foundation` | PR #2, open, CI green; Docker stack verified locally |
 | 2. Authentication and RBAC | Not started | | |
 | 3. Device pairing | Not started | | A working version exists; it is reworked to spec |
 | 4. Games to dashboards | Not started | | |
@@ -18,14 +18,13 @@ Last updated: 2026-10-06 (end of Phase 1).
 | 6. DevOps | Not started | | |
 | 7. Hardening and showcase | Not started | | |
 
-**Next:** install Docker, verify the Docker-only paths listed under Phase 1
-below, then Phase 2 (authentication and RBAC).
+**Next:** Phase 2 (authentication and RBAC).
 
 ## Needs the human
 
 | # | What | Why | Until then |
 |---|---|---|---|
-| H1 | **Install Docker Desktop** on this machine (agreed: after Phase 1) | The compose stack, the Dockerfiles, Testcontainers, `make demo` and the end-to-end job need it | Tests and local runs use an embedded PostgreSQL 16 instead |
+| H1 | ~~Install Docker Desktop~~ | Done 2026-10-06 | none |
 | H2 | **Merge PR #1 (Phase 0), then the Phase 1 PR** | Merging to `master` is the owner's call | Phase 1 is stacked on the Phase 0 branch |
 | H6 | D2 is still open: pairing codes of 6 characters / 72 hours (the prompt) or 8 / 10 minutes (today) | Decides what Phase 3 builds | Default: follow the prompt |
 | H3 | Install `make` (optional) | `make` is not on PATH | Run the commands under each Makefile target by hand |
@@ -193,9 +192,43 @@ game was played through.
 | Golden-vector tests pass in TypeScript and Java | Yes: 16 of 16 in each |
 | Nothing about the existing games regressed | Type-check, build and the 30-check script pass; pages load. Not proven by playing each game |
 
-### Not verified (needs Docker)
+### Docker verification — 2026-10-06
 
-- `docker compose up` and both Dockerfiles, after the profile and port changes.
+Run after Docker Desktop 4.94.0 (Engine 29.8.2) was installed. It verified
+everything that was listed as unverified, and found three real problems, all
+fixed.
+
+```
+docker compose up --build -d     → db, redis, backend, frontend up; backend healthy
+GET :8080/actuator/health        → {"status":"UP"}
+GET :8080/actuator/env, /metrics → 403 (only health is reachable)
+GET :8081/                       → 200 (nginx serves the PWA)
+POST :8081/api/auth/login        → 200 with tokens, through the nginx /api proxy
+docker compose exec backend id   → smaran (not root)
+backend logs                     → profile demo; Flyway applied 2 migrations; seeded synthetic demo data
+SPRING_PROFILES_ACTIVE=prod, built-in secret → refuses to start (StartupChecks)
+SPRING_PROFILES_ACTIVE=prod, real secret     → starts, does not seed
+SMARAN_TEST_DB=docker mvn verify → 62 unit + 11 integration, BUILD SUCCESS, on postgres:16-alpine
+```
+
+Found and fixed:
+
+1. **`/actuator/health` did not exist.** The Dockerfile health check and
+   `SecurityConfig` both used it, but the Actuator dependency was never in the
+   pom, so the backend container always reported unhealthy. Added
+   `spring-boot-starter-actuator` (health only; Redis excluded from the check
+   because nothing reads Redis).
+2. **Testcontainers could not talk to Docker 29** (HTTP 400: the engine's
+   minimum API version is newer than the 1.19 library speaks). Pinned
+   `testcontainers.version` to 1.21.4. Version 1.21.3 still failed.
+3. **Port 5432 is used by a PostgreSQL 18 Windows service on this machine.**
+   The compose database port is now `${SMARAN_DB_PORT:-5432}`; a git-ignored
+   `.env` sets 5433 here. That service was not touched.
+
+Also added `smaran.build.dir` to the pom so the build can run outside OneDrive
+(`-Dsmaran.build.dir=C:/Users/amees/smaran-build`). Without it, the VS Code Java
+extension and OneDrive intermittently removed class files from `backend/target`
+mid-build and `mvn` failed with "bad class file".
 
 ### CI
 
