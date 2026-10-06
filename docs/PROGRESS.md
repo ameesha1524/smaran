@@ -10,7 +10,7 @@ Last updated: 2026-10-06 (end of Phase 1).
 | Phase | Status | Branch | Notes |
 |---|---|---|---|
 | 0. Recon, baseline, plan | **Done** | `phase-0-recon` | PR #1, open. Plan in `docs/PLAN.md` |
-| 1. Foundation: database, contracts, scoring | **P0 and P1 done** | `phase-1-foundation` | Verified without Docker; Docker-only paths unverified (below) |
+| 1. Foundation: database, contracts, scoring | **P0 and P1 done** | `phase-1-foundation` | PR #2, open, CI green. `docker compose` unverified (below) |
 | 2. Authentication and RBAC | Not started | | |
 | 3. Device pairing | Not started | | A working version exists; it is reworked to spec |
 | 4. Games to dashboards | Not started | | |
@@ -196,8 +196,13 @@ game was played through.
 ### Not verified (needs Docker)
 
 - `docker compose up` and both Dockerfiles, after the profile and port changes.
-- The Testcontainers branch of `TestPostgres`.
-- `.github/workflows/ci.yml` has never run.
+
+### CI
+
+Run 37417779385 on `phase-1-foundation` (GitHub Actions, PR #2): `frontend`
+and `backend` both succeeded. The backend job forces Testcontainers
+(`SMARAN_TEST_DB=docker`), so the container path of `TestPostgres` is verified
+there, on PostgreSQL 16.
 
 ### Not done in Phase 1
 
