@@ -1,32 +1,22 @@
 /**
- * The cognitive map: which game reads which domain, and how a session's
- * reading moves the profile.
+ * The cognitive map: which game reads which domain, and what a session
+ * measured.
  *
- * Every session, from every game, goes through the same two steps:
+ *   readingsFor(session) — games that keep round-level data build a rich
+ *   reading themselves (duckReadings, koiReadings, the Lotus Frog's own
+ *   report). Every other game is read as its completion rate against its one
+ *   primary domain.
  *
- *   1. readingsFor(session) — what did this session measure? Games that keep
- *      round-level data build a rich reading themselves (duckReadings,
- *      koiReadings, the Lotus Frog's own report). Every other game is read
- *      as its completion rate against its one primary domain.
- *
- *   2. applyReadings(scores, readings) — fold it in. One exponential moving
- *      average for everything: a domain moves by at most MAX_STEP toward the
- *      new score, scaled by the reading's confidence. At full confidence that
- *      is exactly `prior·0.75 + score·0.25`, the rule every game used before —
- *      so one bad afternoon still never rewrites a person, and a thin reading
- *      (two rounds, a mostly idle visit) only nudges.
- *
- * There are no per-game special cases in the profile update. A game that
- * wants to say more says it through its readings.
+ * How a reading then moves the profile is not decided here. That is the
+ * scoring engine in lib/scoring, the single path for every game.
  *
  * Mirrored in backend/src/main/java/org/smaran/service/CognitiveMap.java. The
  * reading *builders* below are device-only — they need round data the server
- * never sees — but the tables, defaults, the EMA and the weakest-domain rule
- * exist in both places and must stay identical. The parity vectors at the
- * bottom of this file are asserted by CognitiveMapTest.java.
+ * never sees — but the tables, defaults and the weakest-domain rule exist in
+ * both places and must stay identical.
  */
 
-import type { DomainReadings, DomainScores, Domain, GameType, SessionResultDraft } from './types'
+import type { DomainReadings, Domain, GameType, SessionResultDraft } from './types'
 
 /* ---------------------------------------------------------------- tables */
 
@@ -79,10 +69,7 @@ export const LOW_EFFORT: GameType[] = ['FAMILY_GROVE', 'MORNING_RITUALS', 'KOI_A
 /** Games whose core mechanic is a response window — dropped for a supported hand. */
 export const TIMING_GAMES: GameType[] = ['KOI_ARE_JUMPING']
 
-/** The most a single, fully confident session can move a domain. */
-export const MAX_STEP = 0.25
-
-/* ------------------------------------------------------------ the update */
+/* ---------------------------------------------------------- the readings */
 
 /**
  * Keep only what could be real: known domains, finite numbers, clamped to
@@ -107,20 +94,6 @@ export function readingsFor(session: Pick<SessionResultDraft, 'gameType' | 'comp
   const own = sanitizeReadings(session.domainReadings)
   if (Object.keys(own).length > 0) return own
   return sanitizeReadings({ [PRIMARY_DOMAIN[session.gameType]]: { score: session.completionRate, confidence: 1 } })
-}
-
-/** The one EMA. Domains the session did not read are left exactly as they were. */
-export function applyReadings(scores: DomainScores, readings: DomainReadings): DomainScores {
-  const next: DomainScores = { ...scores }
-  const clean = sanitizeReadings(readings)
-  for (const d of DOMAINS) {
-    const r = clean[d]
-    if (!r) continue
-    const alpha = MAX_STEP * r.confidence
-    const prior = Number.isFinite(next[d]) ? next[d] : 0.6
-    next[d] = round(prior * (1 - alpha) + r.score * alpha)
-  }
-  return next
 }
 
 /* ----------------------------------------------------- weakest domain */
@@ -226,13 +199,3 @@ function clamp01(n: number): number {
 function round(n: number): number {
   return Number(n.toFixed(3))
 }
-
-/**
- * Parity vectors — the Java side asserts these exact numbers.
- *
- *   applyReadings({motor: 0.6, …}, {motor: {score: 1, confidence: 1}})    → motor 0.7
- *   applyReadings({motor: 0.6, …}, {motor: {score: 1, confidence: 0.5}})  → motor 0.65
- *   applyReadings({motor: 0.6, …}, {motor: {score: 0, confidence: 1}})    → motor 0.45
- *   readingsFor({gameType: 'FAMILY_GROVE', completionRate: 0.8})          → affective {0.8, 1}
- *   sanitizeReadings({motor: {score: 1.4, confidence: 2}})                → motor {1, 1}
- */

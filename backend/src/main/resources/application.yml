@@ -10,14 +10,18 @@ spring:
 
   jpa:
     hibernate:
-      # `validate` in production: schema changes go through a migration, never
-      # through a restart of the application server.
-      ddl-auto: ${SMARAN_DDL:update}
+      # Flyway owns the schema (db/migration). Hibernate only checks that the
+      # entities match it, in every profile, and refuses to start if not.
+      ddl-auto: validate
     open-in-view: false
     properties:
       hibernate:
         jdbc:
           time_zone: UTC
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
 
   data:
     redis:
@@ -39,8 +43,9 @@ server:
 
 smaran:
   security:
-    # MUST be overridden in every deployment. The application refuses to start
-    # with the placeholder when SPRING_PROFILES_ACTIVE is not `dev`.
+    # MUST be overridden in every deployment. Outside the dev, demo and test
+    # profiles the application refuses to start unless this is a real secret of
+    # at least 32 bytes.
     jwt-secret: ${SMARAN_JWT_SECRET:change-me-change-me-change-me-change-me-32b}
     access-ttl-minutes: 15
     refresh-ttl-days: 7
@@ -55,6 +60,16 @@ smaran:
     # Failed redemptions allowed per client address per window.
     max-failures: 10
     failure-window-minutes: 15
+
+  scoring:
+    # Which rule turns low readings into an alert: TWO_CONSECUTIVE (default),
+    # SINGLE or CUSUM. Status on the dashboard is unaffected; see
+    # org.smaran.scoring.ScoringEngine#alertFor.
+    alert-rule: ${SMARAN_ALERT_RULE:TWO_CONSECUTIVE}
+    # CUSUM only. k is the slack in SD units; h is the threshold (decline at
+    # h, watch at h / 2).
+    cusum-k: 0.5
+    cusum-h: 4
 
   cors:
     allowed-origins: ${SMARAN_CORS:http://localhost:5173}
@@ -87,30 +102,23 @@ management:
     web:
       exposure:
         include: health
+  health:
+    # Nothing is stored only in Redis and no code reads it, so its absence must
+    # not mark the application unhealthy.
+    redis:
+      enabled: false
 
 ---
 # ---------------------------------------------------------------------------
-# dev — a laptop with nothing installed. H2 in memory, no Redis needed, demo
-# data seeded, and the API open so the PWA runs without accounts.
-# Never point this profile at a real person's data.
+# dev — local development against the Postgres in docker-compose.yml
+# (`docker compose up -d db`), or with no Docker at all through
+# LocalDevApplication. Demo data is seeded and the API is open, so the PWA
+# runs without accounts. Never point this profile at a real person's data.
 # ---------------------------------------------------------------------------
 spring:
   config:
     activate:
       on-profile: dev
-
-  datasource:
-    url: jdbc:h2:mem:smaran;DB_CLOSE_DELAY=-1;MODE=PostgreSQL
-    driver-class-name: org.h2.Driver
-    username: sa
-    password: ""
-
-  jpa:
-    hibernate:
-      ddl-auto: create-drop
-    properties:
-      hibernate:
-        dialect: org.hibernate.dialect.H2Dialect
 
   autoconfigure:
     exclude:
@@ -127,3 +135,61 @@ smaran:
 logging:
   level:
     org.smaran: DEBUG
+
+---
+# ---------------------------------------------------------------------------
+# demo — the same seeded, synthetic data as dev, with authentication ON. This
+# is the profile to show the app with: the demo accounts work here and in dev,
+# and nowhere else.
+# ---------------------------------------------------------------------------
+spring:
+  config:
+    activate:
+      on-profile: demo
+
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
+      - org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration
+
+smaran:
+  security:
+    jwt-secret: ${SMARAN_JWT_SECRET:demo-only-secret-demo-only-secret-demo-32}
+    open-demo: false
+  cors:
+    allowed-origins: ${SMARAN_CORS:http://localhost:5173,http://localhost:4173,http://localhost:8081}
+
+---
+# ---------------------------------------------------------------------------
+# test — integration tests. The datasource is supplied by the test itself
+# (a throwaway PostgreSQL), nothing is seeded, and authentication is ON.
+# ---------------------------------------------------------------------------
+spring:
+  config:
+    activate:
+      on-profile: test
+
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
+      - org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration
+
+smaran:
+  security:
+    jwt-secret: test-only-secret-test-only-secret-test-32
+    open-demo: false
+
+---
+# ---------------------------------------------------------------------------
+# prod — everything comes from the environment. StartupChecks refuses to boot
+# without a real JWT secret of at least 32 bytes, or with the API open.
+# ---------------------------------------------------------------------------
+spring:
+  config:
+    activate:
+      on-profile: prod
+
+smaran:
+  security:
+    jwt-secret: ${SMARAN_JWT_SECRET:}
+    open-demo: false

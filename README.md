@@ -15,23 +15,32 @@ texture, rhythm — and reshapes the experience around what she has kept.
 
 ## Running it
 
-### Development (nothing to install but Node and a JDK)
+### Development
+
+Node 20+, a JDK 21 and Maven. The backend needs PostgreSQL 16, which it can
+get in either of two ways.
 
 ```bash
-# backend — H2 in memory, demo data seeded, API open for local use
+# backend, with Docker
+docker compose up -d db
 cd backend
-mvn -Dspring-boot.run.profiles=dev spring-boot:run     # → :8080
+mvn spring-boot:run -Dspring-boot.run.profiles=dev      # → :8080
+
+# backend, with no Docker: starts its own PostgreSQL 16 as a child process
+cd backend
+mvn spring-boot:test-run -Dspring-boot.run.main-class=org.smaran.LocalDevApplication
 
 # frontend
 cd frontend
-npm install
-npm run dev                                            # → :5173
+npm ci
+npm run dev                                             # → :5173
 ```
 
-Open <http://localhost:5173>. The first screen is the arrival — five steps that
-build a cognitive profile without asking a single clinical question. The
-caregiver dashboard is at `/caregiver` (`rupa@example.com` / `smaran`, or the
-"continue without signing in" link).
+Both seed synthetic demo data and, in the `dev` profile, leave the API open.
+The caregiver dashboard is at `/caregiver` (`rupa@example.com` / `smaran`).
+All data in this repository is synthetic.
+
+Tests: `npm test` in `frontend/`, `mvn verify` in `backend/`.
 
 The PWA also runs with **no backend at all**: every read falls back to the
 device cache and then to seeded demo content, and every write queues in
@@ -41,9 +50,11 @@ a village with no signal for three days.
 ### The full stack
 
 ```bash
-export SMARAN_JWT_SECRET=$(openssl rand -base64 48)
-docker compose up --build       # PWA :8081 · API :8080
+docker compose up --build       # PWA :8081 · API :8080, demo profile
 ```
+
+For a production-shaped start, set `SMARAN_PROFILE=prod` and
+`SMARAN_JWT_SECRET=$(openssl rand -base64 48)`.
 
 ---
 

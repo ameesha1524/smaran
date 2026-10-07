@@ -1,0 +1,65 @@
+# Continuous integration: every push and pull request.
+#
+# A deliberately small first version. Phase 6 adds Docker builds, security
+# scans, the data-science job and the end-to-end suite.
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - name: Typecheck
+        run: npx tsc -b && npx tsc -p tsconfig.test.json
+      - name: Unit tests, including the golden vectors
+        run: npm test
+      - name: golden-vectors.json is what the engine generates
+        run: |
+          npm run golden
+          git diff --exit-code -- ../golden-vectors.json
+      - run: npm run build
+
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: maven
+      # Unit tests, the golden vectors against the Java engine, and the
+      # integration tests on a PostgreSQL 16 container (Testcontainers).
+      - run: mvn -B verify
+        env:
+          SMARAN_TEST_DB: docker
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: backend-test-reports
+          path: |
+            backend/target/surefire-reports
+            backend/target/failsafe-reports

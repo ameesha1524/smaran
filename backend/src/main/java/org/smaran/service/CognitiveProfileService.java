@@ -25,6 +25,8 @@ import org.smaran.repo.CognitiveObjectResultRepository;
 import org.smaran.repo.CognitiveProfileRepository;
 import org.smaran.repo.GameSessionRepository;
 import org.smaran.repo.MoodLogRepository;
+import org.smaran.scoring.CognitiveScoringService;
+import org.smaran.scoring.Contract.TargetState;
 import org.smaran.web.Dto;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -35,8 +37,8 @@ import org.springframework.transaction.annotation.Transactional;
  * Mirror of frontend/src/lib/cognitiveProfile.ts. The device routes offline; the
  * server routes with a month of history the device does not keep. They must
  * agree on the rules, so the rules live in both places and are written the same
- * way on purpose. Which game reads which domain, and how a reading moves the
- * profile, live one level down in {@link CognitiveMap}.
+ * way on purpose. Which game reads which domain lives in {@link CognitiveMap};
+ * how a reading moves the profile lives in {@link CognitiveScoringService}.
  *
  * deriveGameRoute, in the order the questions are asked:
  *   0. is this one of her first two sessions?  → the onboarding, fixed
@@ -58,18 +60,21 @@ public class CognitiveProfileService {
     private final MoodLogRepository moods;
     private final CognitiveObjectResultRepository objectResults;
     private final ObjectMapper json;
+    private final CognitiveScoringService scoring;
 
     public CognitiveProfileService(
             CognitiveProfileRepository profiles,
             GameSessionRepository sessions,
             MoodLogRepository moods,
             CognitiveObjectResultRepository objectResults,
-            ObjectMapper json) {
+            ObjectMapper json,
+            CognitiveScoringService scoring) {
         this.profiles = profiles;
         this.sessions = sessions;
         this.moods = moods;
         this.objectResults = objectResults;
         this.json = json;
+        this.scoring = scoring;
     }
 
     /* --------------------------------------------------------- accessors */
@@ -83,17 +88,18 @@ public class CognitiveProfileService {
         });
     }
 
+    /** Every domain starts at the engine's neutral 50 and earns its level. */
     private Map<String, Double> defaultScores() {
         Map<String, Double> m = new LinkedHashMap<>();
-        m.put("language", 0.6);
-        m.put("visualSemantic", 0.6);
-        m.put("motor", 0.6);
-        m.put("affective", 0.7);
-        // Nothing measures temporal orientation until Morning Rituals has run
-        // once; 0.6 is honest about that rather than inventing a reading.
-        m.put("temporal", 0.6);
-        m.put("executiveFunction", 0.6);
+        for (String d : CognitiveMap.DOMAINS) {
+            m.put(d, CognitiveMap.NEUTRAL);
+        }
         return m;
+    }
+
+    /** The engine state behind a profile, seeded from its domain scores where it has none. */
+    public Map<String, TargetState> scoringState(CognitiveProfile profile) {
+        return scoring.stateOf(profile.getScoringState(), scores(profile));
     }
 
     public Map<String, Double> scores(CognitiveProfile profile) {
@@ -195,21 +201,18 @@ public class CognitiveProfileService {
     /* ------------------------------------------------- update per session */
 
     /**
-     * Applied after every session: the session's readings, folded in by the one
-     * confidence-weighted EMA in {@link CognitiveMap}. At full confidence that
-     * is 3:1 toward history, so one bad afternoon never rewrites a person.
+     * Applied after every session. The session's readings go through the
+     * scoring engine, the one path that moves a domain level, and the 0–1
+     * domain scores are re-derived from the engine's levels.
      */
     @Transactional
     public CognitiveProfile updateFromSession(GameSession session) {
         CognitiveProfile profile = forPatient(session.getPatientId());
-        Map<String, Double> scores = CognitiveMap.apply(scores(profile), readingsOf(session));
+        CognitiveScoringService.Applied applied =
+                scoring.apply(profile.getScoringState(), scores(profile), readingsOf(session));
+        Map<String, Double> scores = applied.domainScores();
 
-        // Hesitation and easing are motor and affective signals in their own
-        // right, independent of which game produced them.
-        if (session.isEasedMidSession()) {
-            scores.put("affective", round(scores.getOrDefault("affective", 0.7) * 0.9));
-        }
-
+        profile.setScoringState(scoring.write(applied.state()));
         profile.setDomainScores(write(scores));
         profile.setDerivedPeak(PeakWindow.forHour(
                 session.getStartedAt().atZone(ZoneId.systemDefault()).getHour()));
@@ -320,6 +323,7 @@ public class CognitiveProfileService {
         return new Dto.CognitiveProfileDto(
                 p.getPatientId(),
                 scores(p),
+                scoringState(p),
                 p.getMotorTier(),
                 p.getAnxietyThreshold(),
                 p.getStartingPhase(),

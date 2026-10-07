@@ -32,6 +32,7 @@ import org.smaran.repo.MoodLogRepository;
 import org.smaran.repo.PatientRepository;
 import org.smaran.repo.ReminderScheduleRepository;
 import org.smaran.service.CognitiveMap;
+import org.smaran.service.CognitiveProfileService;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Profile;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -54,7 +55,7 @@ import org.springframework.stereotype.Component;
  * real caregiver uploads during setup.
  */
 @Component
-@Profile("dev")
+@Profile({"dev", "demo"})
 @Slf4j
 public class DemoDataSeeder implements CommandLineRunner {
 
@@ -70,6 +71,7 @@ public class DemoDataSeeder implements CommandLineRunner {
     private final ReminderScheduleRepository reminders;
     private final PasswordEncoder encoder;
     private final ObjectMapper json;
+    private final CognitiveProfileService profiles;
 
     public DemoDataSeeder(
             PatientRepository patients,
@@ -81,7 +83,8 @@ public class DemoDataSeeder implements CommandLineRunner {
             MoodLogRepository moods,
             ReminderScheduleRepository reminders,
             PasswordEncoder encoder,
-            ObjectMapper json) {
+            ObjectMapper json,
+            CognitiveProfileService profiles) {
         this.patients = patients;
         this.caregivers = caregivers;
         this.family = family;
@@ -92,6 +95,7 @@ public class DemoDataSeeder implements CommandLineRunner {
         this.reminders = reminders;
         this.encoder = encoder;
         this.json = json;
+        this.profiles = profiles;
     }
 
     @Override
@@ -99,7 +103,7 @@ public class DemoDataSeeder implements CommandLineRunner {
         if (patients.existsById(PATIENT_ID)) {
             return;
         }
-        log.info("seeding demo data (dev profile)");
+        log.info("seeding synthetic demo data");
 
         Caregiver caregiver = new Caregiver();
         caregiver.setId("demo-caregiver");
@@ -208,6 +212,10 @@ public class DemoDataSeeder implements CommandLineRunner {
             session.setMoodAtStart(moodRotation[day % moodRotation.length]);
             session.setDomainReadings(write(readings));
             sessions.save(session);
+            // Oldest first, through the same update a real session takes, so the
+            // demo profile is what the engine makes of this history and not a
+            // hand-written number.
+            profiles.updateFromSession(session);
 
             MoodLog mood = new MoodLog();
             mood.setPatientId(PATIENT_ID);

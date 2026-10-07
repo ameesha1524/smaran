@@ -31,9 +31,18 @@ public class CognitiveProfile {
     @Id
     private String patientId;
 
-    /** {"language":0.74,"visualSemantic":0.55,"motor":0.66,...} */
+    /** {"language":0.74,"visualSemantic":0.55,"motor":0.66,...} — 0–1, derived from scoringState. */
     @Column(columnDefinition = "text", nullable = false)
     private String domainScores = "{}";
+
+    /**
+     * The scoring engine's state: per domain and sub-signal, the level (0–100),
+     * the recent raws and the alert bookkeeping. `domainScores` above is a 0–1
+     * view of the levels in here. Null on a profile that predates the engine;
+     * it is then seeded from `domainScores`.
+     */
+    @Column(columnDefinition = "text")
+    private String scoringState;
 
     /** {"MUSICAL":0.55,"NATURE":0.82,...} — per-cluster recognition accuracy. */
     @Column(columnDefinition = "text", nullable = false)

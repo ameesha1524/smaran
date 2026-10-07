@@ -20,7 +20,28 @@
   <properties>
     <java.version>21</java.version>
     <jjwt.version>0.12.6</jjwt.version>
+    <!-- Newer than Spring Boot's managed 1.19.x: that talks Docker API 1.32,
+         which Docker Engine 29 refuses (HTTP 400), so tests could not start
+         a container on current Docker Desktop. -->
+    <testcontainers.version>1.21.4</testcontainers.version>
+    <!-- Where Maven builds. Override with -Dsmaran.build.dir=... when the
+         checkout is in a synced or indexed folder (OneDrive, an IDE) that
+         touches target/ mid-build. -->
+    <smaran.build.dir>${project.basedir}/target</smaran.build.dir>
   </properties>
+
+  <dependencyManagement>
+    <dependencies>
+      <!-- Embedded PostgreSQL at the same major version as docker-compose.yml. -->
+      <dependency>
+        <groupId>io.zonky.test.postgres</groupId>
+        <artifactId>embedded-postgres-binaries-bom</artifactId>
+        <version>16.4.0</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
 
   <dependencies>
     <dependency>
@@ -55,6 +76,13 @@
       <artifactId>spring-boot-starter-validation</artifactId>
     </dependency>
 
+    <!-- /actuator/health, for the container health check and the deploy script.
+         Only `health` is exposed (application.yml). -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-actuator</artifactId>
+    </dependency>
+
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-data-redis</artifactId>
@@ -66,11 +94,14 @@
       <scope>runtime</scope>
     </dependency>
 
-    <!-- The `dev` profile runs the whole backend on H2 with no infrastructure,
-         so a laptop with nothing installed can still serve the PWA. -->
+    <!-- Flyway owns the schema. Hibernate only validates against it. -->
     <dependency>
-      <groupId>com.h2database</groupId>
-      <artifactId>h2</artifactId>
+      <groupId>org.flywaydb</groupId>
+      <artifactId>flyway-core</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.flywaydb</groupId>
+      <artifactId>flyway-database-postgresql</artifactId>
       <scope>runtime</scope>
     </dependency>
 
@@ -117,10 +148,46 @@
       <artifactId>spring-security-test</artifactId>
       <scope>test</scope>
     </dependency>
+
+    <!-- Tests run against real PostgreSQL. Testcontainers is used when Docker
+         is available (CI, most machines). -->
+    <dependency>
+      <groupId>org.testcontainers</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.testcontainers</groupId>
+      <artifactId>postgresql</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <!-- The same PostgreSQL as a plain process, for machines without Docker
+         and for `LocalDevApplication`. See org.smaran.support.TestPostgres. -->
+    <dependency>
+      <groupId>io.zonky.test</groupId>
+      <artifactId>embedded-postgres</artifactId>
+      <version>2.0.7</version>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <build>
+    <directory>${smaran.build.dir}</directory>
     <plugins>
+      <!-- `mvn test` runs the fast unit tests. `mvn verify` adds the *IT
+           classes, which start the application on a real PostgreSQL. -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-failsafe-plugin</artifactId>
+        <executions>
+          <execution>
+            <goals>
+              <goal>integration-test</goal>
+              <goal>verify</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
       <plugin>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-maven-plugin</artifactId>
