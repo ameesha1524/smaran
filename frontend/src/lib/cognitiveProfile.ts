@@ -26,11 +26,13 @@ import {
   LOW_EFFORT,
   ROUTE_GAMES,
   TIMING_GAMES,
-  applyReadings,
   readingsFor,
   weakestDomainFromHistory,
   type ReadingHistoryEntry,
 } from './cognitiveMap'
+import { applySession } from './scoring/engine'
+import { contributionsFromReadings, domainScoresFrom, stateFromDomainScores } from './scoring/legacy'
+import type { ScoringState } from './scoring/types'
 
 /* ----------------------------------------------------------- peak windows */
 
@@ -398,11 +400,13 @@ function startingPhaseFor(objectAccuracy: number): GrovePhase {
  * Applied after every session — the loop that closes the profile.
  *
  * Every game goes through the same path: its readings (its own, or its
- * completion rate against its primary domain) folded in by the one EMA in
- * cognitiveMap.ts. No game is special-cased here.
+ * completion rate against its primary domain) become contributions, and the
+ * scoring engine in lib/scoring folds them in. No game is special-cased here,
+ * and `domainScores` is re-derived from the engine's levels each time.
  */
 export function updateProfile(profile: CognitiveProfile, result: SessionResultDraft): CognitiveProfile {
-  const domainScores = applyReadings(profile.domainScores, readingsFor(result))
+  const scoring = applySession(scoringStateOf(profile), contributionsFromReadings(readingsFor(result))).state
+  const domainScores = domainScoresFrom(scoring, profile.domainScores)
 
   // Copied, not mutated: the previous profile object may still be rendering.
   const clusters = { ...profile.clusterAccuracy }
@@ -417,22 +421,33 @@ export function updateProfile(profile: CognitiveProfile, result: SessionResultDr
   return {
     ...profile,
     domainScores,
+    scoring,
     clusterAccuracy: clusters,
     derivedPeak: windowForHour(new Date(result.startedAt).getHours()),
     updatedAt: new Date().toISOString(),
   }
 }
 
+/**
+ * The engine state behind a profile. A profile saved before the engine
+ * existed has only 0–1 scores; each becomes a level with no history, and any
+ * domain the saved state is missing is seeded the same way.
+ */
+export function scoringStateOf(profile: CognitiveProfile): ScoringState {
+  return { ...stateFromDomainScores(profile.domainScores), ...(profile.scoring ?? {}) }
+}
+
 export function emptyProfile(patientId: string, peak: PeakWindow = 'MORNING'): CognitiveProfile {
   return {
     patientId,
+    // Every domain starts at the engine's neutral 50 and earns its level.
     domainScores: {
-      language: 0.6,
-      visualSemantic: 0.6,
-      motor: 0.6,
-      affective: 0.7,
-      temporal: 0.6,
-      executiveFunction: 0.6,
+      language: 0.5,
+      visualSemantic: 0.5,
+      motor: 0.5,
+      affective: 0.5,
+      temporal: 0.5,
+      executiveFunction: 0.5,
     },
     motorTier: 'MODERATE',
     anxietyThreshold: 0.72,

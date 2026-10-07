@@ -145,7 +145,7 @@ public class DashboardService {
         List<Dto.DomainPoint> out = new ArrayList<>();
         Map<String, Double> carry = new LinkedHashMap<>();
         for (String d : CognitiveMap.DOMAINS) {
-            carry.put(d, d.equals("affective") ? 0.7 : CognitiveMap.NEUTRAL);
+            carry.put(d, CognitiveMap.NEUTRAL);
         }
 
         for (Map.Entry<String, Map<String, double[]>> day : byDay.entrySet()) {

@@ -1,3 +1,5 @@
+import type { ScoringState } from './scoring/types'
+
 /**
  * Shared domain types. These mirror the Spring Boot entities one-for-one so
  * that a payload can move between IndexedDB, the API and the UI unchanged.
@@ -84,7 +86,17 @@ export type DomainReadings = Partial<Record<Domain, DomainReading>>
 
 export interface CognitiveProfile {
   patientId: string
+  /**
+   * 0–1 per domain. A view of `scoring` for routing and the current dashboard:
+   * each value is the engine's level divided by 100.
+   */
   domainScores: DomainScores
+  /**
+   * The scoring engine's state (lib/scoring): level, recent raws and alert
+   * bookkeeping per domain and sub-signal. Absent on profiles saved before the
+   * engine existed; it is then seeded from `domainScores`.
+   */
+  scoring?: ScoringState
   motorTier: MotorTier
   /** Derived behaviourally from hesitation and abandonment — never self-reported. */
   anxietyThreshold: number

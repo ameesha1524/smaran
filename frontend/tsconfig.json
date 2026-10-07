@@ -20,5 +20,5 @@
   "include": ["src"],
   // The Service Worker is compiled by vite-plugin-pwa with the WebWorker lib.
   // Type-checking it alongside DOM code produces spurious global conflicts.
-  "exclude": ["src/service-worker.ts"]
+  "exclude": ["src/service-worker.ts", "src/**/*.test.ts"]
 }
