@@ -88,6 +88,8 @@ public class ReportService {
             domainRow(domains, body, "Motor & rhythm", first.motor(), last.motor());
             domainRow(domains, body, "Affective & anxiety", first.affective(), last.affective());
             domainRow(domains, body, "Temporal orientation", first.temporal(), last.temporal());
+            domainRow(domains, body, "Executive function & working memory",
+                    first.executiveFunction(), last.executiveFunction());
             doc.add(domains);
         } else {
             doc.add(paragraph("Not enough sessions yet to show a trend.", body, 8));

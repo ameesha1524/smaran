@@ -1,8 +1,11 @@
 package org.smaran.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
+import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.smaran.domain.CognitiveObjectResult;
+import org.smaran.domain.DomainReading;
 import org.smaran.domain.GameSession;
 import org.smaran.repo.CognitiveObjectResultRepository;
 import org.smaran.repo.GameSessionRepository;
@@ -26,18 +29,21 @@ public class SessionService {
     private final CognitiveProfileService profiles;
     private final GardenStateService gardens;
     private final CognitiveAdaptationService adaptation;
+    private final ObjectMapper json;
 
     public SessionService(
             GameSessionRepository sessions,
             CognitiveObjectResultRepository objectResults,
             CognitiveProfileService profiles,
             GardenStateService gardens,
-            CognitiveAdaptationService adaptation) {
+            CognitiveAdaptationService adaptation,
+            ObjectMapper json) {
         this.sessions = sessions;
         this.objectResults = objectResults;
         this.profiles = profiles;
         this.gardens = gardens;
         this.adaptation = adaptation;
+        this.json = json;
     }
 
     public record Accepted(GameSession session, boolean duplicate) {
@@ -66,6 +72,15 @@ public class SessionService {
         session.setCognitiveLoadScore(clamp(body.cognitiveLoadScore()));
         session.setMoodAtStart(body.moodAtStart());
         session.setEasedMidSession(sessionKey != null && adaptation.wasEased(sessionKey));
+
+        // Resolved and stored once. The profile update, the dashboard trend and
+        // the weakest-domain rule all read this same set afterwards.
+        Map<String, DomainReading> readings = CognitiveMap.readingsFor(
+                body.gameType(), session.getCompletionRate(), body.domainReadings());
+        session.setDomainReadings(write(readings));
+        if (body.metrics() != null && !body.metrics().isEmpty()) {
+            session.setMetrics(write(body.metrics()));
+        }
         sessions.save(session);
 
         if (body.objectResults() != null) {
@@ -88,6 +103,15 @@ public class SessionService {
         profiles.updateFromSession(session);
         gardens.computeGrowth(body.patientId(), body.gameType(), session.getCompletionRate());
         return new Accepted(session, false);
+    }
+
+    private String write(Object value) {
+        try {
+            return json.writeValueAsString(value);
+        } catch (Exception e) {
+            log.warn("could not serialise session detail: {}", e.getMessage());
+            return null;
+        }
     }
 
     private static double clamp(double v) {

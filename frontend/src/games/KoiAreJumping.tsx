@@ -4,6 +4,7 @@ import { useSmaran } from '../state/SmaranContext'
 import { STAGE_W, useStageScale } from '../scenes/PixelPond'
 import type { LanguageCode, SessionResultDraft } from '../lib/types'
 import { cue } from '../lib/ambient'
+import { koiReadings } from '../lib/cognitiveMap'
 import './games.css'
 
 /**
@@ -460,6 +461,19 @@ export default function KoiAreJumping() {
       difficultyTier: 1,
       cognitiveLoadScore,
       moodAtStart: moodToday ?? 'QUIET',
+      // Response rate and how early in each leap she answered — see koiReadings.
+      domainReadings: koiReadings(rounds),
+      metrics: {
+        rounds: rounds.map(({ creature, wasTapped, reactionMs, direction, radiusPx, leapMs }) => ({
+          creature,
+          wasTapped,
+          reactionMs,
+          direction,
+          radiusPx,
+          leapMs,
+        })),
+        sessionTimeOfDay: rounds[rounds.length - 1].sessionTimeOfDay,
+      },
     }
     void completeSession(draft)
   }, [completeSession, moodToday])

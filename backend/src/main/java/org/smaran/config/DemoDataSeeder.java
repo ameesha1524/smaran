@@ -1,12 +1,16 @@
 package org.smaran.config;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.smaran.domain.Caregiver;
 import org.smaran.domain.CognitiveObjectResult;
+import org.smaran.domain.DomainReading;
 import org.smaran.domain.Enums.GameType;
 import org.smaran.domain.Enums.Mood;
 import org.smaran.domain.Enums.PeakWindow;
@@ -27,6 +31,7 @@ import org.smaran.repo.MeaningfulObjectRepository;
 import org.smaran.repo.MoodLogRepository;
 import org.smaran.repo.PatientRepository;
 import org.smaran.repo.ReminderScheduleRepository;
+import org.smaran.service.CognitiveMap;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Profile;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -39,6 +44,11 @@ import org.springframework.stereotype.Component;
  * The shape of the data is chosen to show the one thing the dashboard exists to
  * surface: visual-semantic recognition declining steadily while every other
  * domain holds. That is the signal a caregiver would otherwise never see.
+ *
+ * Every session carries the domain readings a real one would: single-domain
+ * games read their completion rate, the Lotus Frog reads four domains at
+ * once, and Duck Roll Call and Koi Are Jumping read their own domain with
+ * the same shape the device produces.
  *
  * All names, objects and memories here are fictional placeholders for content a
  * real caregiver uploads during setup.
@@ -59,6 +69,7 @@ public class DemoDataSeeder implements CommandLineRunner {
     private final MoodLogRepository moods;
     private final ReminderScheduleRepository reminders;
     private final PasswordEncoder encoder;
+    private final ObjectMapper json;
 
     public DemoDataSeeder(
             PatientRepository patients,
@@ -69,7 +80,8 @@ public class DemoDataSeeder implements CommandLineRunner {
             CognitiveObjectResultRepository objectResults,
             MoodLogRepository moods,
             ReminderScheduleRepository reminders,
-            PasswordEncoder encoder) {
+            PasswordEncoder encoder,
+            ObjectMapper json) {
         this.patients = patients;
         this.caregivers = caregivers;
         this.family = family;
@@ -79,6 +91,7 @@ public class DemoDataSeeder implements CommandLineRunner {
         this.moods = moods;
         this.reminders = reminders;
         this.encoder = encoder;
+        this.json = json;
     }
 
     @Override
@@ -137,7 +150,12 @@ public class DemoDataSeeder implements CommandLineRunner {
     /** Thirty days of sessions. Musical recognition fades; nothing else does. */
     private void seedHistory() {
         GameType[] rotation = {
-            GameType.FAMILY_GROVE, GameType.WEAVERS_LOOM, GameType.GRANDMOTHERS_TALE, GameType.MORNING_RITUALS
+            GameType.FAMILY_GROVE,
+            GameType.LOTUS_FROG,
+            GameType.GRANDMOTHERS_TALE,
+            GameType.DUCK_ROLL_CALL,
+            GameType.MORNING_RITUALS,
+            GameType.KOI_ARE_JUMPING,
         };
         Mood[] moodRotation = {Mood.PEACEFUL, Mood.QUIET, Mood.JOYFUL, Mood.A_LITTLE_LOW, Mood.THINKING};
 
@@ -149,17 +167,46 @@ public class DemoDataSeeder implements CommandLineRunner {
             Instant at = Instant.now().minus(Duration.ofDays(day)).minus(Duration.ofHours(2));
             GameType type = rotation[day % rotation.length];
             double progress = (29 - day) / 29d;
+            double steady = clamp(0.78 + (day % 3) * 0.04);
+
+            Map<String, DomainReading> readings = new LinkedHashMap<>();
+            double completion;
+            switch (type) {
+                case LOTUS_FROG -> {
+                    // The signal: visual-semantic falls while the pond's other
+                    // three readings hold.
+                    double visual = clamp(0.92 - progress * 0.35);
+                    readings.put("visualSemantic", new DomainReading(visual, 0.9));
+                    readings.put("motor", new DomainReading(clamp(0.7 + (day % 2) * 0.04), 0.8));
+                    readings.put("affective", new DomainReading(clamp(0.74 + (day % 3) * 0.03), 0.7));
+                    readings.put("temporal", new DomainReading(clamp(0.66 + (day % 4) * 0.02), 0.8));
+                    completion = visual;
+                }
+                case DUCK_ROLL_CALL -> {
+                    // Span calibrating upward over the month.
+                    completion = clamp(0.55 + progress * 0.14);
+                    readings.put("executiveFunction", new DomainReading(completion, 1));
+                }
+                case KOI_ARE_JUMPING -> {
+                    completion = clamp(0.68 - progress * 0.05);
+                    readings.put("motor", new DomainReading(completion, 1));
+                }
+                default -> {
+                    completion = steady;
+                    readings.put(CognitiveMap.primaryDomain(type), new DomainReading(completion, 1));
+                }
+            }
 
             GameSession session = new GameSession();
             session.setPatientId(PATIENT_ID);
             session.setGameType(type);
             session.setStartedAt(at);
             session.setDurationMs(Duration.ofMinutes(9 + (day % 5)).toMillis());
-            session.setCompletionRate(
-                    type == GameType.WEAVERS_LOOM ? clamp(0.92 - progress * 0.35) : clamp(0.78 + (day % 3) * 0.04));
+            session.setCompletionRate(completion);
             session.setDifficultyTier(2);
             session.setCognitiveLoadScore(0.4 + (day % 4) * 0.08);
             session.setMoodAtStart(moodRotation[day % moodRotation.length]);
+            session.setDomainReadings(write(readings));
             sessions.save(session);
 
             MoodLog mood = new MoodLog();
@@ -169,15 +216,25 @@ public class DemoDataSeeder implements CommandLineRunner {
             mood.setLocalHour(at.atZone(ZoneId.systemDefault()).getHour());
             moods.save(mood);
 
-            if (type == GameType.WEAVERS_LOOM) {
+            if (type == GameType.LOTUS_FROG) {
                 // The declining cluster is MUSICAL specifically. Everything else
                 // holds, which is what makes it a domain signal and not decay.
+                // (No current game produces per-object results — the Weaver's
+                // Loom did — so these stand in for that history in the demo.)
                 objectResults.save(objectResult(session.getId(), at, "Dhol", SemanticCluster.MUSICAL, progress > 0.45));
                 objectResults.save(objectResult(session.getId(), at, "Pepa", SemanticCluster.MUSICAL, progress > 0.6));
                 objectResults.save(objectResult(session.getId(), at, "Brass lamp", SemanticCluster.DAILY_LIFE, true));
                 objectResults.save(objectResult(session.getId(), at, "Tea leaves", SemanticCluster.FOOD, true));
                 objectResults.save(objectResult(session.getId(), at, "Kopou phool", SemanticCluster.NATURE, day % 5 != 0));
             }
+        }
+    }
+
+    private String write(Object value) {
+        try {
+            return json.writeValueAsString(value);
+        } catch (Exception e) {
+            return null;
         }
     }
 

@@ -65,6 +65,23 @@ export interface DomainScores {
   executiveFunction: number
 }
 
+export type Domain = keyof DomainScores
+
+/**
+ * What one session says about one domain.
+ *
+ * `score` is 0–1, how well that domain did this session. `confidence` is 0–1,
+ * how much evidence the session produced for it — a two-round sitting or a
+ * mostly idle pond visit is a thin reading, and moves the profile less.
+ */
+export interface DomainReading {
+  score: number
+  confidence: number
+}
+
+/** A session reads the domains it actually exercises, and only those. */
+export type DomainReadings = Partial<Record<Domain, DomainReading>>
+
 export interface CognitiveProfile {
   patientId: string
   domainScores: DomainScores
@@ -92,6 +109,10 @@ export interface GameSession {
   cognitiveLoadScore: number
   moodAtStart: MoodKey
   objectResults?: CognitiveObjectResult[]
+  /** The readings the profile was updated from — resolved, never absent once sent. */
+  domainReadings?: DomainReadings
+  /** Game-specific raw measures (span history, reaction times…) for the caregiver view. */
+  metrics?: Record<string, unknown>
 }
 
 export interface CognitiveObjectResult {
@@ -179,6 +200,40 @@ export interface SessionResultDraft {
   cognitiveLoadScore: number
   moodAtStart: MoodKey
   objectResults?: CognitiveObjectResult[]
+  /**
+   * What this session measured, domain by domain. Games with round-level data
+   * (Duck Roll Call, Koi Are Jumping, Lotus Frog) fill this in themselves;
+   * when it is absent, lib/cognitiveMap.ts reads `completionRate` against the
+   * game's primary domain.
+   */
+  domainReadings?: DomainReadings
+  metrics?: Record<string, unknown>
+}
+
+/* ------------------------------------------------------------- pairing */
+
+/** A one-time code the family reads out to set up her tablet. */
+export interface PairingCode {
+  /** Formatted for reading aloud: `ABCD-EFGH`. */
+  code: string
+  expiresAt: string
+}
+
+/** A tablet that redeemed a code and still holds a live device token. */
+export interface PairedDevice {
+  id: string
+  label: string | null
+  pairedAt: string
+  lastSeenAt: string | null
+  expiresAt: string
+}
+
+export interface RedeemResult {
+  deviceToken: string
+  deviceId: string
+  patientId: string
+  expiresAt: string
+  patient: Patient & { cognitiveProfile?: CognitiveProfile }
 }
 
 /**

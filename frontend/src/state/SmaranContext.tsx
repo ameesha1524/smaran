@@ -8,6 +8,7 @@ import type {
   MoodKey,
   MotorTier,
   Patient,
+  RedeemResult,
   SentimentSignals,
   SessionResultDraft,
   VoiceNote,
@@ -19,11 +20,13 @@ import {
   lastSynced,
   patients,
   reminders as remindersApi,
+  setTokens,
   submitSession,
   syncNow,
 } from '../lib/api'
 import { applyRest, emptyGarden, phaseFor, water } from '../lib/gardenEngine'
 import { deriveGameRoute, emptyProfile, tapTargetFor, updateProfile } from '../lib/cognitiveProfile'
+import { readingsFor, type ReadingHistoryEntry } from '../lib/cognitiveMap'
 import { DEMO_PATIENT_ID, demoPatient } from '../lib/demoData'
 import { cue, setTone, startAmbient, unlockAudio } from '../lib/ambient'
 import { getPack } from '../i18n/strings'
@@ -61,6 +64,16 @@ interface SmaranState {
   journalEntries: JournalEntry[]
   caregiverVoiceNotes: VoiceNote[]
   stillness: boolean
+  /** Set once this tablet has redeemed a family pairing code. Null on an unpaired device. */
+  devicePairing: DevicePairingMeta | null
+}
+
+/** What the tablet remembers about its own pairing. The token itself lives with the other tokens. */
+export interface DevicePairingMeta {
+  deviceId: string
+  patientId: string
+  pairedAt: string
+  expiresAt: string
 }
 
 interface SmaranActions {
@@ -73,6 +86,12 @@ interface SmaranActions {
   setPatient(patch: Partial<Patient>): void
   /** The caregiver hands the device over. Opens the patient side for the first time. */
   completeCaregiverSetup(): void
+  /**
+   * Take on the patient a redeemed pairing code belongs to: her record, her
+   * profile, and the device token. Also completes caregiver setup — the family
+   * did that part on their own phone.
+   */
+  adoptPairing(result: RedeemResult): Promise<void>
   /** She confirms the language she is greeted in. Never unset afterwards. */
   confirmLanguage(code: LanguageCode): void
   addJournalEntry(text: string, signals: SentimentSignals | null): JournalEntry
@@ -100,6 +119,25 @@ const SESSION_COUNT_KEY = 'smaran.sessionCount'
 const JOURNAL_KEY = 'smaran.journal'
 const VOICE_NOTES_KEY = 'smaran.voiceNotes'
 const STILL_KEY = 'smaran.stillness'
+const HISTORY_KEY = 'smaran.readingHistory'
+const PAIRING_KEY = 'smaran.devicePairing'
+
+/** Enough for the weakest-domain rule's seven-day window with room to spare. */
+const KEEP_HISTORY = 60
+const HISTORY_MAX_AGE_MS = 30 * 86_400_000
+
+function readPairing(): DevicePairingMeta | null {
+  try {
+    const raw = localStorage.getItem(PAIRING_KEY)
+    const parsed: unknown = raw ? JSON.parse(raw) : null
+    if (parsed && typeof parsed === 'object' && typeof (parsed as DevicePairingMeta).deviceId === 'string') {
+      return parsed as DevicePairingMeta
+    }
+    return null
+  } catch {
+    return null
+  }
+}
 
 function todayKey(): string {
   return new Date().toISOString().slice(0, 10)
@@ -151,7 +189,19 @@ export function SmaranProvider({ children }: { children: ReactNode }) {
     readList<VoiceNote>(VOICE_NOTES_KEY),
   )
   const [stillness, setStillnessState] = useState(() => localStorage.getItem(STILL_KEY) === 'true')
+  const [readingHistory, setReadingHistory] = useState<ReadingHistoryEntry[]>(() =>
+    readList<ReadingHistoryEntry>(HISTORY_KEY),
+  )
+  const [devicePairing, setDevicePairing] = useState<DevicePairingMeta | null>(readPairing)
   const ambientStarted = useRef(false)
+
+  // completeSession is often called from a game's unmount cleanup, holding a
+  // closure from several renders back. The profile and garden it builds on
+  // must be the latest, not the one that closure saw.
+  const profileRef = useRef(profile)
+  profileRef.current = profile
+  const gardenRef = useRef(gardenState)
+  gardenRef.current = gardenState
 
   /* ---------------------------------------------------------- hydrate */
 
@@ -221,8 +271,8 @@ export function SmaranProvider({ children }: { children: ReactNode }) {
   // sessionCount is part of the route because the first two sessions *are* the
   // onboarding: fixed games, fixed difficulty, no screen sat through.
   const route: GameRoute = useMemo(
-    () => deriveGameRoute({ profile, moodToday, sessionCount }),
-    [profile, moodToday, sessionCount],
+    () => deriveGameRoute({ profile, moodToday, sessionCount, history: readingHistory }),
+    [profile, moodToday, sessionCount, readingHistory],
   )
 
   // The tap target is global: one number, set by the hand, honoured everywhere.
@@ -262,19 +312,25 @@ export function SmaranProvider({ children }: { children: ReactNode }) {
 
   const completeSession = useCallback(
     async (result: SessionResultDraft): Promise<{ milestone: boolean }> => {
-      const outcome = water(gardenState, result.gameType, result.completionRate)
+      const outcome = water(gardenRef.current, result.gameType, result.completionRate)
+      gardenRef.current = outcome.next
       setGardenState(outcome.next)
       await cacheSet(`garden:${patient.id}`, outcome.next)
 
-      // updateProfile returns the *same* object for games that own their
-      // profile update (the Lotus Frog folds in four domains itself, before
-      // calling this). Writing it back regardless would overwrite that richer
-      // reading with whatever this closure captured.
-      const nextProfile = updateProfile(profile, result)
-      if (nextProfile !== profile) {
-        setProfileState(nextProfile)
-        await cacheSet(PROFILE_KEY, nextProfile)
-      }
+      // Resolved once, here, and sent as-is: the server folds in exactly the
+      // readings the device did, so the two profiles cannot diverge.
+      const readings = readingsFor(result)
+      const nextProfile = updateProfile(profileRef.current, { ...result, domainReadings: readings })
+      profileRef.current = nextProfile
+      setProfileState(nextProfile)
+      await cacheSet(PROFILE_KEY, nextProfile)
+
+      setReadingHistory((prev) => {
+        const cutoff = Date.now() - HISTORY_MAX_AGE_MS
+        const next = [...prev.filter((h) => h.at > cutoff), { at: result.startedAt, readings }].slice(-KEEP_HISTORY)
+        writeList(HISTORY_KEY, next)
+        return next
+      })
 
       const { queued } = await submitSession({
         patientId: patient.id,
@@ -286,6 +342,8 @@ export function SmaranProvider({ children }: { children: ReactNode }) {
         cognitiveLoadScore: result.cognitiveLoadScore,
         moodAtStart: result.moodAtStart,
         objectResults: result.objectResults,
+        domainReadings: readings,
+        metrics: result.metrics,
       })
       // Watering is posted separately so the family WebSocket fires even when
       // the session row is the thing that failed to send.
@@ -301,7 +359,7 @@ export function SmaranProvider({ children }: { children: ReactNode }) {
       cue(outcome.milestone ? 'bloom' : 'petal')
       return { milestone: outcome.milestone }
     },
-    [gardenState, patient.id, profile],
+    [patient.id],
   )
 
   const setProfile = useCallback((p: CognitiveProfile) => {
@@ -333,6 +391,35 @@ export function SmaranProvider({ children }: { children: ReactNode }) {
     localStorage.setItem(SETUP_KEY, 'true')
     setCaregiverSetupComplete(true)
   }, [])
+
+  const adoptPairing = useCallback(
+    async (result: RedeemResult) => {
+      // A device token never refreshes: it is long-lived by design, and the
+      // family revokes it rather than it expiring under her.
+      setTokens(result.deviceToken)
+
+      const { cognitiveProfile, ...record } = result.patient
+      setPatientState(record)
+      setLanguageState(record.languageCode)
+      await cacheSet(PATIENT_KEY, record)
+      if (cognitiveProfile) {
+        profileRef.current = cognitiveProfile
+        setProfileState(cognitiveProfile)
+        await cacheSet(PROFILE_KEY, cognitiveProfile)
+      }
+
+      const meta: DevicePairingMeta = {
+        deviceId: result.deviceId,
+        patientId: result.patientId,
+        pairedAt: new Date().toISOString(),
+        expiresAt: result.expiresAt,
+      }
+      localStorage.setItem(PAIRING_KEY, JSON.stringify(meta))
+      setDevicePairing(meta)
+      completeCaregiverSetup()
+    },
+    [completeCaregiverSetup],
+  )
 
   const addJournalEntry = useCallback((text: string, signals: SentimentSignals | null): JournalEntry => {
     const entry: JournalEntry = {
@@ -426,12 +513,14 @@ export function SmaranProvider({ children }: { children: ReactNode }) {
     journalEntries,
     caregiverVoiceNotes,
     stillness,
+    devicePairing,
     setLanguage,
     checkIn,
     completeSession,
     setProfile,
     setPatient,
     completeCaregiverSetup,
+    adoptPairing,
     confirmLanguage,
     addJournalEntry,
     markVoiceNoteListened,

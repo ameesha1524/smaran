@@ -41,7 +41,7 @@
 //
 // Weights are generous and forgiving by design — this is a calm companion for
 // an elderly patient, not a test. One slow day should nudge, never rewrite; the
-// long-running profile blends readings with an EMA on top of this (see smaran.ts).
+// long-running profile blends readings with an EMA on top of this (see lib/cognitiveMap.ts).
 
 import type { CogDomain } from "./domains";
 

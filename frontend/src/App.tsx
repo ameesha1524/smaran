@@ -12,6 +12,7 @@ import Journal from './screens/Journal'
 import Login from './caregiver/Login'
 import Dashboard from './caregiver/Dashboard'
 import Setup from './caregiver/Setup'
+import PairDevice from './caregiver/PairDevice'
 import { SmaranProvider, useSmaran } from './state/SmaranContext'
 
 /**
@@ -24,11 +25,12 @@ import { SmaranProvider, useSmaran } from './state/SmaranContext'
 
 function PatientEntry() {
   const { caregiverSetupComplete, languageConfirmed } = useSmaran()
-  // Two gates, and neither belongs to the patient for long. The caregiver sets
-  // the device up; she confirms the language once. After that this route is the
-  // pond, unconditionally — no login, no onboarding screen, no mood gate. What
-  // used to be onboarding is now the first two sessions, observed silently.
-  if (!caregiverSetupComplete) return <Navigate to="/caregiver/setup" replace />
+  // Two gates, and neither belongs to the patient for long. The family sets the
+  // device up — by pairing it with their account, or locally with no account —
+  // and she confirms the language once. After that this route is the pond,
+  // unconditionally — no login, no onboarding screen, no mood gate. What used
+  // to be onboarding is now the first two sessions, observed silently.
+  if (!caregiverSetupComplete) return <Navigate to="/caregiver/pair" replace />
   if (!languageConfirmed) return <Navigate to="/language" replace />
   return <Home />
 }
@@ -54,6 +56,7 @@ export default function App() {
         <Route path="/caregiver" element={<Login />} />
         <Route path="/caregiver/dashboard" element={<Dashboard />} />
         <Route path="/caregiver/setup" element={<Setup />} />
+        <Route path="/caregiver/pair" element={<PairDevice />} />
 
         {/* Anything unrecognised returns her to the pond rather than a 404. */}
         <Route path="*" element={<Navigate to="/" replace />} />

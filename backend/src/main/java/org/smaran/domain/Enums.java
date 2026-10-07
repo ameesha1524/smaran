@@ -12,10 +12,19 @@ public final class Enums {
     }
 
     public enum GameType {
-        WEAVERS_LOOM,
+        DUCK_ROLL_CALL,
         GRANDMOTHERS_TALE,
         FAMILY_GROVE,
-        MORNING_RITUALS
+        MORNING_RITUALS,
+        LOTUS_FROG,
+        KOI_ARE_JUMPING,
+        /**
+         * Retired from the device. Kept so that sessions already stored with it
+         * still load and still count toward their domain's history; nothing
+         * routes to it and the device can no longer send it.
+         */
+        @Deprecated
+        WEAVERS_LOOM
     }
 
     /** Fluid ±150 ms · Moderate ±400 ms · Supported (erratic or abandoned). */

@@ -1,16 +1,21 @@
 # Dependencies
 node_modules/
-package-lock.json
+# package-lock.json is tracked on purpose: `npm ci` and CI need it.
 yarn.lock
 
-# Production
+# Build output
 dist/
 build/
+target/
+*.tsbuildinfo
 
-# Environment
+# Environment and secrets (.env.example is the only env file in git)
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
+*.pem
+*.key
+id_rsa*
 
 # IDE
 .vscode/
@@ -32,3 +37,18 @@ yarn-error.log*
 # Cache
 .eslintcache
 .cache/
+
+# Runtime data: uploaded family media, never in git
+backend/storage/
+
+# Python (data-science/)
+__pycache__/
+*.pyc
+.venv/
+.ipynb_checkpoints/
+.pytest_cache/
+
+# Test reports
+playwright-report/
+test-results/
+coverage/

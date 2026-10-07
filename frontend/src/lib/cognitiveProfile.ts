@@ -12,7 +12,6 @@
 import type {
   CognitiveObjectResult,
   CognitiveProfile,
-  DomainScores,
   GameRoute,
   GameType,
   GrovePhase,
@@ -22,6 +21,16 @@ import type {
   SemanticCluster,
   SessionResultDraft,
 } from './types'
+import {
+  DOMAIN_GAME,
+  LOW_EFFORT,
+  ROUTE_GAMES,
+  TIMING_GAMES,
+  applyReadings,
+  readingsFor,
+  weakestDomainFromHistory,
+  type ReadingHistoryEntry,
+} from './cognitiveMap'
 
 /* ----------------------------------------------------------- peak windows */
 
@@ -181,40 +190,8 @@ export function decliningCluster(
 
 /* ---------------------------------------------------------------- domains */
 
-/** Which domain fell furthest this week. Drives the second game of the session. */
-export function weakestDomain(trend: { date: string; scores: DomainScores }[]): keyof DomainScores | null {
-  if (trend.length < 2) return null
-  const sorted = [...trend].sort((a, b) => a.date.localeCompare(b.date))
-  const first = sorted[0].scores
-  const last = sorted[sorted.length - 1].scores
-  let key: keyof DomainScores | null = null
-  let worst = 0
-  for (const k of Object.keys(last) as (keyof DomainScores)[]) {
-    const delta = first[k] - last[k]
-    if (delta > worst) {
-      worst = delta
-      key = k
-    }
-  }
-  return worst >= 0.05 ? key : null
-}
-
-const DOMAIN_GAMES: Record<keyof DomainScores, GameType> = {
-  language: 'GRANDMOTHERS_TALE',
-  // The Lotus Frog is the only remaining game that reads visualSemantic —
-  // the Weaver's Loom, which used to own this domain, has been retired.
-  visualSemantic: 'LOTUS_FROG',
-  // The Koi Are Jumping is a vigilance/reaction task — watch the water, tap
-  // the instant something leaps — which is a motor-domain reading in the
-  // clearest sense: response initiation and sustained visual attention, not
-  // memory. Morning Rituals used to stand in for motor for lack of a better
-  // fit; it now reads temporal alone, same split Duck Roll Call did for
-  // executiveFunction.
-  motor: 'KOI_ARE_JUMPING',
-  affective: 'FAMILY_GROVE',
-  temporal: 'MORNING_RITUALS',
-  executiveFunction: 'DUCK_ROLL_CALL',
-}
+// Which game reads which domain, and the weakest-domain rule itself, live in
+// lib/cognitiveMap.ts — the one table both routing and the profile update use.
 
 /* ---------------------------------------------------------------- routing */
 
@@ -223,7 +200,8 @@ export interface RouteInputs {
   moodToday: MoodKey | null
   /** Completed sessions so far. The first two are the onboarding. */
   sessionCount?: number
-  domainTrend?: { date: string; scores: DomainScores }[]
+  /** Recent sessions' readings, newest last. Feeds the weakest-domain rule. */
+  history?: ReadingHistoryEntry[]
   now?: Date
 }
 
@@ -247,7 +225,7 @@ export function deriveGameRoute({
   profile,
   moodToday,
   sessionCount = 0,
-  domainTrend = [],
+  history = [],
   now = new Date(),
 }: RouteInputs): GameRoute {
   const rationale: string[] = []
@@ -273,22 +251,19 @@ export function deriveGameRoute({
   let difficultyTier = 2
   let ambientHz: 432 | 528 = 432
 
-  // Koi Are Jumping never scores a miss as a failure — the gentlest game in
-  // the pond — so it belongs on a low-effort day alongside Family Grove and
-  // Morning Rituals.
-  const lowEffort: GameType[] = ['FAMILY_GROVE', 'MORNING_RITUALS', 'KOI_ARE_JUMPING']
-  let games: GameType[] = [
-    'DUCK_ROLL_CALL',
-    'GRANDMOTHERS_TALE',
-    'FAMILY_GROVE',
-    'MORNING_RITUALS',
-    'KOI_ARE_JUMPING',
-  ]
+  let games: GameType[] = [...ROUTE_GAMES]
 
   if (!inPeak) {
-    games = games.filter((g) => lowEffort.includes(g))
+    games = games.filter((g) => LOW_EFFORT.includes(g))
     difficultyTier -= 1
     rationale.push('Outside the peak window — only low-effort games are offered.')
+  }
+
+  // Rule 4 comes before the reordering so a filtered-out game can't be
+  // pulled back in by rule 3.
+  if (!timingMechanicsAllowed(profile.motorTier)) {
+    games = games.filter((g) => !TIMING_GAMES.includes(g))
+    rationale.push('Motor tier is supported — timing-based games are not suggested.')
   }
 
   if (isLowMood(moodToday)) {
@@ -300,15 +275,16 @@ export function deriveGameRoute({
     ambientHz = 528
   }
 
-  const weakest = weakestDomain(domainTrend)
+  // Only reorders a game that survived the rules above: a declining domain
+  // earns its game a better slot, never an exception to the peak window.
+  const weakest = weakestDomainFromHistory(history, now.getTime())
   if (weakest) {
-    const target = DOMAIN_GAMES[weakest]
-    games = [games[0], target, ...games.filter((g) => g !== games[0] && g !== target)]
-    rationale.push(`${weakest} declined most this week — its game is scheduled second.`)
-  }
-
-  if (!timingMechanicsAllowed(profile.motorTier)) {
-    rationale.push('Motor tier is supported — timing-based mechanics are switched off.')
+    const target = DOMAIN_GAME[weakest]
+    if (games.includes(target)) {
+      const rest = games.filter((g) => g !== target)
+      games = [...rest.slice(0, 1), target, ...rest.slice(1)]
+      rationale.push(`${weakest} declined most this week — its game is scheduled second.`)
+    }
   }
 
   const tapTargetPx = tapTargetFor(profile.motorTier)
@@ -418,41 +394,30 @@ function startingPhaseFor(objectAccuracy: number): GrovePhase {
   return 1
 }
 
-/** Applied after every session — the loop that closes the profile. */
+/**
+ * Applied after every session — the loop that closes the profile.
+ *
+ * Every game goes through the same path: its readings (its own, or its
+ * completion rate against its primary domain) folded in by the one EMA in
+ * cognitiveMap.ts. No game is special-cased here.
+ */
 export function updateProfile(profile: CognitiveProfile, result: SessionResultDraft): CognitiveProfile {
-  // The Lotus Frog reads four domains itself and folds them in through
-  // applyFrogReport, which weights each one by how much evidence the visit
-  // actually produced. Running the single-domain EMA below as well would count
-  // the same visit twice, and would do it from a completion rate the pond does
-  // not really have — there is nothing there to complete.
-  if (result.gameType === 'LOTUS_FROG') return profile
+  const domainScores = applyReadings(profile.domainScores, readingsFor(result))
 
-  const domain = {
-    DUCK_ROLL_CALL: 'executiveFunction',
-    GRANDMOTHERS_TALE: 'language',
-    FAMILY_GROVE: 'affective',
-    MORNING_RITUALS: 'temporal',
-    // The first game that actually closes the loop on the motor domain —
-    // until now nothing wrote it after onboarding's own first estimate.
-    KOI_ARE_JUMPING: 'motor',
-  }[result.gameType] as keyof DomainScores
-
-  // Exponential moving average: one bad day never rewrites a person.
-  const prior = profile.domainScores[domain]
-  const next = round(prior * 0.75 + result.completionRate * 0.25)
-
-  const scores: DomainScores = { ...profile.domainScores, [domain]: next }
+  // Copied, not mutated: the previous profile object may still be rendering.
+  const clusters = { ...profile.clusterAccuracy }
   if (result.objectResults?.length) {
     const fresh = clusterAccuracy(result.objectResults)
     for (const [k, v] of Object.entries(fresh) as [SemanticCluster, number][]) {
-      const before = profile.clusterAccuracy[k] ?? v
-      profile.clusterAccuracy[k] = round(before * 0.7 + v * 0.3)
+      const before = clusters[k] ?? v
+      clusters[k] = round(before * 0.7 + v * 0.3)
     }
   }
 
   return {
     ...profile,
-    domainScores: scores,
+    domainScores,
+    clusterAccuracy: clusters,
     derivedPeak: windowForHour(new Date(result.startedAt).getHours()),
     updatedAt: new Date().toISOString(),
   }

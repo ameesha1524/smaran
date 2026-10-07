@@ -4,6 +4,7 @@ import { useSmaran } from '../state/SmaranContext'
 import { STAGE_W, useStageScale } from '../scenes/PixelPond'
 import type { LanguageCode, SessionResultDraft } from '../lib/types'
 import { cue } from '../lib/ambient'
+import { duckReadings } from '../lib/cognitiveMap'
 import './games.css'
 
 /**
@@ -451,9 +452,24 @@ export default function DuckRollCall() {
       difficultyTier,
       cognitiveLoadScore: Number(cognitiveLoadScore.toFixed(3)),
       moodAtStart: moodToday ?? 'QUIET',
+      // Span and flash are what make this a working-memory reading rather
+      // than a tidiness score — see duckReadings for the weighting.
+      domainReadings: duckReadings(rounds),
+      metrics: {
+        rounds: rounds.map(({ spanLength, flashDurationMs, wasCorrect, attemptsBeforeCorrect }) => ({
+          spanLength,
+          flashDurationMs,
+          wasCorrect,
+          attemptsBeforeCorrect,
+        })),
+        finalSpan,
+        breakdownSpan: breakdownSpan(historyRef.current),
+        errorless,
+        sessionTimeOfDay: rounds[rounds.length - 1].sessionTimeOfDay,
+      },
     }
     void completeSession(draft)
-  }, [completeSession, moodToday])
+  }, [completeSession, moodToday, errorless])
 
   useEffect(() => finishSitting, [finishSitting])
 
