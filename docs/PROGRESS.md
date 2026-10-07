@@ -26,7 +26,7 @@ Last updated: 2026-10-06 (end of Phase 1).
 |---|---|---|---|
 | H1 | ~~Install Docker Desktop~~ | Done 2026-10-06 | none |
 | H2 | **Merge PR #1 (Phase 0), then the Phase 1 PR** | Merging to `master` is the owner's call | Phase 1 is stacked on the Phase 0 branch |
-| H6 | D2 is still open: pairing codes of 6 characters / 72 hours (the prompt) or 8 / 10 minutes (today) | Decides what Phase 3 builds | Default: follow the prompt |
+| H6 | ~~Pairing code format~~ | Decided 2026-10-07: 6 characters, 72 hours (the prompt's spec) | none |
 | H3 | Install `make` (optional) | `make` is not on PATH | Run the commands under each Makefile target by hand |
 | H4 | Review the commit `f388fe8` | It is 37 files of earlier work that nobody has read as a diff | It is the base for Phase 1 |
 | H5 | Everything in Appendix E of the master prompt (VM, domain, secrets, branch protection) | Needed for deployment in Phase 6 | Not blocking before Phase 6 |
@@ -41,6 +41,7 @@ Last updated: 2026-10-06 (end of Phase 1).
 | 2026-10-06 | Untrack `backend/target/` and `frontend/tsconfig.tsbuildinfo` | Build output |
 | 2026-10-06 | Keep the unified scoring path rather than restore `applyFrogReport` (default D1) | See `PLAN.md` section 2 |
 | 2026-10-06 | PRs target `master` until the branch is renamed in Phase 6 (default D4) | Renaming the default branch is the owner's setting |
+| 2026-10-07 | D2 decided by the human: pairing codes are 6 characters, valid 72 hours | Follows the prompt. Weaker against guessing than 8 characters / 10 minutes, so Phase 3 keeps both rate limits and the hash-only storage |
 | 2026-10-06 | Phase 1 went ahead on defaults D1, D3, D4 after "go ahead with phase 1" | The human's instruction |
 | 2026-10-06 | Baseline for velocity is trailing: it excludes the score being judged | Otherwise a drop pulls its own baseline down and hides part of itself |
 | 2026-10-06 | SD floor of 3 points (`minSd`) | The spec is silent on identical scores, which give SD 0 and a division by zero |
