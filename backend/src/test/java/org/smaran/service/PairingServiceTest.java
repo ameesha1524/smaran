@@ -53,7 +53,7 @@ class PairingServiceTest {
     void setUp() {
         repo = mock(DevicePairingRepository.class);
         patients = mock(PatientRepository.class);
-        jwt = new JwtService(SECRET, 15, 7);
+        jwt = new JwtService(SECRET, 15);
         // Three failures per fifteen minutes, so the limit is cheap to reach.
         service = new PairingService(repo, patients, jwt, SECRET, 10, 180, 3, 15);
         clock = new MutableClock(Instant.now().truncatedTo(ChronoUnit.SECONDS));

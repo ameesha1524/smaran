@@ -76,7 +76,7 @@ class SchemaAndIngestionIT extends PostgresIntegrationTest {
     void migrationsApplied() {
         List<String> versions = jdbc.queryForList(
                 "select version from flyway_schema_history where success order by installed_rank", String.class);
-        assertEquals(List.of("1", "2"), versions);
+        assertEquals(List.of("1", "2", "3"), versions);
         Integer failed = jdbc.queryForObject(
                 "select count(*) from flyway_schema_history where not success", Integer.class);
         assertEquals(0, failed);
@@ -93,6 +93,24 @@ class SchemaAndIngestionIT extends PostgresIntegrationTest {
                 "patient", "game_session", "cognitive_profile", "garden_state", "family_member")) {
             assertTrue(tables.contains(expected), "missing table " + expected);
         }
+    }
+
+    @Test
+    @DisplayName("the old caregiver tables are gone and accounts live in app_user")
+    void caregiverTablesReplaced() {
+        List<String> tables = jdbc.queryForList(
+                "select table_name from information_schema.tables where table_schema = 'public'", String.class);
+        assertFalse(tables.contains("caregiver"));
+        assertFalse(tables.contains("caregiver_patient"));
+        assertTrue(tables.contains("app_user"));
+    }
+
+    @Test
+    @DisplayName("a patient cannot name an owner who is not an account")
+    void ownerIsAForeignKey() {
+        assertThrows(DataAccessException.class, () -> jdbc.update(
+                "insert into patient (id, name, language_code, kinship_term, peak_window, profile_version, caregiver_id) "
+                        + "values (?, 'x', 'en', '', 'MORNING', '1.0', 'no-such-user')", UUID.randomUUID().toString()));
     }
 
     @Test

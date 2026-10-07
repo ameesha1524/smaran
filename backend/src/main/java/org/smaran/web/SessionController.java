@@ -1,6 +1,7 @@
 package org.smaran.web;
 
 import org.smaran.config.AccessGuard;
+import org.smaran.config.AccessGuard.Capability;
 import org.smaran.service.SessionService;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -34,7 +35,12 @@ public class SessionController {
     public SessionAck submit(
             @RequestBody Dto.SessionSubmission body,
             @RequestHeader(value = "X-Smaran-Session", required = false) String sessionKey) {
-        guard.requireAccessTo(body.patientId());
+        guard.require(body.patientId(), Capability.PLAY);
+        // After the guard, so an unauthorised caller learns nothing from what is missing.
+        if (body.startedAt() == null || body.gameType() == null) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.BAD_REQUEST, "A session needs a game and a start time.");
+        }
         SessionService.Accepted accepted = sessions.submit(body, sessionKey);
         return new SessionAck(accepted.session().getId(), accepted.duplicate());
     }

@@ -5,13 +5,16 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.config.Customizer;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
@@ -31,6 +34,7 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
  */
 @Configuration
 @EnableWebSecurity
+@EnableMethodSecurity
 public class SecurityConfig {
 
     private final JwtAuthFilter jwtFilter;
@@ -50,7 +54,12 @@ public class SecurityConfig {
         http.csrf(csrf -> csrf.disable())
                 .cors(Customizer.withDefaults())
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                // No sign-in is a 401, not Spring's default 403, so a client can
+                // tell "sign in" from "you may not".
+                .exceptionHandling(e -> e.authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
                 .authorizeHttpRequests(auth -> {
+                    // /me needs a sign-in; the rest of /api/auth is how you get one.
+                    auth.requestMatchers("/api/auth/me").authenticated();
                     auth.requestMatchers("/api/auth/**", "/actuator/health", "/ws/**").permitAll();
                     // Spring re-dispatches a thrown status to /error without the
                     // caller's token. Left closed, every 404 and 401 above came
@@ -64,10 +73,14 @@ public class SecurityConfig {
                     if (openDemo) {
                         auth.anyRequest().permitAll();
                     } else {
-                        // Doctors read trends and ZKP-verified statements. They
-                        // do not get the raw session or object endpoints.
+                        // Doctors read the dashboard and the report, and nothing
+                        // else: not sessions, objects, family media or journal.
+                        // The URL layer is the coarse net; AccessGuard decides the
+                        // rest, per patient, on every request.
                         auth.requestMatchers("/api/report/**").hasAnyRole("DOCTOR", "CAREGIVER", "ADMIN");
                         auth.requestMatchers("/api/caregiver/**").hasAnyRole("CAREGIVER", "DOCTOR", "ADMIN");
+                        auth.requestMatchers("/api/admin/**").hasRole("ADMIN");
+                        auth.requestMatchers("/api/doctor/**").hasRole("DOCTOR");
                         auth.anyRequest().authenticated();
                     }
                 })

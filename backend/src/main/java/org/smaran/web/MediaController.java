@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import org.smaran.config.AccessGuard;
+import org.smaran.config.AccessGuard.Capability;
 import org.smaran.service.StorageService;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
@@ -47,7 +48,7 @@ public class MediaController {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND);
         }
 
-        guard.requireAccessTo(key.substring(0, Math.max(0, key.indexOf('/'))));
+        guard.require(key.substring(0, Math.max(0, key.indexOf('/'))), Capability.PLAY);
 
         Path path = storage.resolve(key);
         if (path == null || !Files.isReadable(path)) {

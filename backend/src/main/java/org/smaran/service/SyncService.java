@@ -46,6 +46,10 @@ public class SyncService {
         int duplicates = 0;
 
         for (Dto.SessionSubmission s : safe(request.sessions())) {
+            if (s.startedAt() == null || s.gameType() == null) {
+                // Unusable without its identity; skipping it keeps one bad row from failing the whole batch.
+                continue;
+            }
             if (!request.patientId().equals(s.patientId())) {
                 // A payload claiming another patient's id is dropped silently;
                 // the caller has no business knowing whether it existed.

@@ -2,6 +2,7 @@ package org.smaran.web;
 
 import java.time.Duration;
 import org.smaran.config.AccessGuard;
+import org.smaran.config.AccessGuard.Capability;
 import org.smaran.domain.Enums.Mood;
 import org.smaran.service.CognitiveAdaptationService;
 import org.smaran.service.CognitiveProfileService;
@@ -45,7 +46,7 @@ public class CognitiveController {
     public Flux<ServerSentEvent<Dto.DifficultyEaseEvent>> stream(@PathVariable String sessionId) {
         // The session id is `{patientId}:{gameType}:{timestamp}` — the patient
         // portion is what the guard checks.
-        guard.requireAccessTo(patientOf(sessionId));
+        guard.require(patientOf(sessionId), Capability.PLAY);
         return adaptation
                 .stream(sessionId)
                 .map(event -> ServerSentEvent.<Dto.DifficultyEaseEvent>builder()
@@ -58,7 +59,7 @@ public class CognitiveController {
     @PostMapping("/cognitive/sample")
     public void sample(@RequestBody Dto.LoadSample body) {
         String patientId = patientOf(body.sessionId());
-        guard.requireAccessTo(patientId);
+        guard.require(patientId, Capability.PLAY);
         adaptation.sample(patientId, body);
     }
 
@@ -66,7 +67,7 @@ public class CognitiveController {
     @GetMapping("/game/{patientId}/route")
     public Dto.GameRouteDto route(
             @PathVariable String patientId, @RequestParam(required = false) Mood mood) {
-        guard.requireAccessTo(patientId);
+        guard.require(patientId, Capability.PLAY);
         return profiles.deriveGameRoute(patientId, mood);
     }
 

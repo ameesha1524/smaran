@@ -2,6 +2,7 @@ package org.smaran.web;
 
 import java.util.List;
 import org.smaran.config.AccessGuard;
+import org.smaran.config.AccessGuard.Capability;
 import org.smaran.domain.ReminderSchedule;
 import org.smaran.service.AudioBiomarkerService;
 import org.smaran.service.DashboardService;
@@ -47,14 +48,14 @@ public class CaregiverController {
 
     @GetMapping("/caregiver/dashboard/{patientId}")
     public Dto.DashboardSummary summary(@PathVariable String patientId) {
-        guard.requireAccessTo(patientId);
+        guard.require(patientId, Capability.CLINICAL_READ);
         return dashboard.summary(patientId);
     }
 
     /** One page, for the eleven minutes a neurologist has. */
     @GetMapping("/report/patient/{patientId}")
     public ResponseEntity<byte[]> report(@PathVariable String patientId) {
-        guard.requireAccessTo(patientId);
+        guard.require(patientId, Capability.CLINICAL_READ);
         Dto.DashboardSummary summary = dashboard.summary(patientId);
         byte[] pdf = reports.render(summary);
         return ResponseEntity.ok()
@@ -67,7 +68,7 @@ public class CaregiverController {
 
     @GetMapping("/biomarker/{patientId}/trend")
     public Dto.TrendResult voiceTrend(@PathVariable String patientId) {
-        guard.requireAccessTo(patientId);
+        guard.require(patientId, Capability.CLINICAL_READ);
         return biomarkers.computeTrend(patientId);
     }
 
@@ -75,13 +76,13 @@ public class CaregiverController {
 
     @GetMapping("/reminder/{patientId}/schedule")
     public List<Dto.ReminderDto> schedule(@PathVariable String patientId) {
-        guard.requireAccessTo(patientId);
+        guard.require(patientId, Capability.PLAY);
         return reminders.forPatient(patientId).stream().map(CaregiverController::toDto).toList();
     }
 
     @PutMapping("/reminder/{patientId}/schedule")
     public List<Dto.ReminderDto> replace(@PathVariable String patientId, @RequestBody List<Dto.ReminderDto> body) {
-        guard.requireAccessTo(patientId);
+        guard.require(patientId, Capability.CAREGIVE);
         List<ReminderSchedule> next = body.stream()
                 .map(dto -> {
                     ReminderSchedule r = new ReminderSchedule();
@@ -98,7 +99,7 @@ public class CaregiverController {
 
     @PostMapping("/reminder/trigger")
     public void trigger(@RequestBody Dto.TriggerRequest body) {
-        guard.requireAccessTo(body.patientId());
+        guard.require(body.patientId(), Capability.CAREGIVE);
         reminders.testFor(body.patientId());
     }
 

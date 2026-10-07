@@ -7,4 +7,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface PatientRepository extends JpaRepository<Patient, String> {
 
     List<Patient> findByCaregiverId(String caregiverId);
+
+    boolean existsByIdAndCaregiverId(String id, String caregiverId);
 }
