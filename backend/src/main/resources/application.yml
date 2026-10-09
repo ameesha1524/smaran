@@ -72,14 +72,19 @@ smaran:
     admin-password: ${ADMIN_PASSWORD:}
 
   pairing:
-    # A code is read off one phone and typed into a tablet in the same room.
-    code-ttl-minutes: 10
-    # The tablet's token. Long, because a locked-out patient cannot recover an
-    # account; the family removes a tablet rather than waiting for this.
+    # A code is minted on the family's phone and may be typed into the tablet
+    # later that day or the next: 72 hours, one use.
+    code-ttl-hours: 72
+    # A tablet's token slides forward every time it is seen, so an abandoned
+    # tablet lapses after this long but a used one never does. A locked-out
+    # patient cannot recover an account; the family removes a tablet instead.
     device-ttl-days: 180
-    # Failed redemptions allowed per client address per window.
-    max-failures: 10
+    # Failed tries allowed per tablet fingerprint and per client address per window.
+    max-failures: 5
     failure-window-minutes: 15
+    # Mixed into the stored hash of every code. Defaults to the signing secret,
+    # which production already must set; set this to keep the two apart.
+    # pepper:
 
   scoring:
     # Which rule turns low readings into an alert: TWO_CONSECUTIVE (default),

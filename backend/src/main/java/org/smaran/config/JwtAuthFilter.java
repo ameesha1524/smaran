@@ -7,7 +7,8 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.List;
-import org.smaran.service.PairingService;
+import java.util.Set;
+import org.smaran.service.DeviceService;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.lang.NonNull;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -19,26 +20,33 @@ import org.springframework.web.filter.OncePerRequestFilter;
 /**
  * Reads the bearer token and puts a principal in the context.
  *
- * The `patients` claim travels on the token so that every controller can answer
- * "may this person see this patient?" without another database round trip. The
- * check itself lives in {@link AccessGuard} — a claim on a token is evidence,
- * not permission.
+ * There are two kinds of token and they look different on purpose:
  *
- * A tablet's device token (one with a {@code did} claim) is additionally
- * checked against its pairing row, so a tablet the family removed is treated
- * as anonymous from its next request, long before its token would expire.
+ * <ul>
+ *   <li>A <b>person's</b> access token is a short-lived JWT. It says who they are
+ *       and what role they hold, never which patients they may see; that is
+ *       decided by {@link AccessGuard} on every request.</li>
+ *   <li>A <b>tablet's</b> device token is opaque, starts {@code sdt_}, and is
+ *       looked up by its hash. A tablet the family removed is anonymous from its
+ *       next request.</li>
+ * </ul>
+ *
+ * Anything else, including an old-style tablet JWT or a token with an unknown
+ * role, leaves the request anonymous.
  */
 @Component
 public class JwtAuthFilter extends OncePerRequestFilter {
 
+    private static final Set<String> PERSON_ROLES = Set.of("ADMIN", "CAREGIVER", "DOCTOR");
+
     private final JwtService jwt;
-    private final PairingService pairings;
+    private final DeviceService devices;
 
     // Lazy: the filter is built with the security chain, before the JPA layer
-    // PairingService sits on needs to exist.
-    public JwtAuthFilter(JwtService jwt, @Lazy PairingService pairings) {
+    // DeviceService sits on needs to exist.
+    public JwtAuthFilter(JwtService jwt, @Lazy DeviceService devices) {
         this.jwt = jwt;
-        this.pairings = pairings;
+        this.devices = devices;
     }
 
     @Override
@@ -50,16 +58,13 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
         String header = request.getHeader("Authorization");
         if (header != null && header.startsWith("Bearer ")) {
-            Claims claims = jwt.parse(header.substring(7));
-            String deviceId = claims == null ? null : claims.get("did", String.class);
-            boolean deviceRevoked = deviceId != null && !pairings.isDeviceActive(deviceId);
-            if (claims != null && !jwt.isRefresh(claims) && !deviceRevoked) {
-                String role = claims.get("role", String.class);
-                @SuppressWarnings("unchecked")
-                List<String> patients = claims.get("patients", List.class);
-                var principal = new SmaranPrincipal(claims.getSubject(), role, patients == null ? List.of() : patients);
+            String token = header.substring(7).strip();
+            SmaranPrincipal principal = token.startsWith(DeviceService.TOKEN_PREFIX)
+                    ? deviceOf(token)
+                    : personOf(token);
+            if (principal != null) {
                 var auth = new UsernamePasswordAuthenticationToken(
-                        principal, null, List.of(new SimpleGrantedAuthority("ROLE_" + role)));
+                        principal, null, List.of(new SimpleGrantedAuthority("ROLE_" + principal.role())));
                 SecurityContextHolder.getContext().setAuthentication(auth);
             }
         }
@@ -67,7 +72,30 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         chain.doFilter(request, response);
     }
 
-    /** Who is calling, and which patients they were granted at login. */
+    private SmaranPrincipal deviceOf(String token) {
+        return devices.authenticate(token)
+                .map(d -> new SmaranPrincipal(d.deviceId(), "DEVICE", List.of(d.patientId())))
+                .orElse(null);
+    }
+
+    private SmaranPrincipal personOf(String token) {
+        Claims claims = jwt.parse(token);
+        if (claims == null || jwt.isRefresh(claims)) {
+            return null;
+        }
+        String role = claims.get("role", String.class);
+        if (!PERSON_ROLES.contains(role)) {
+            return null;
+        }
+        @SuppressWarnings("unchecked")
+        List<String> patients = claims.get("patients", List.class);
+        return new SmaranPrincipal(claims.getSubject(), role, patients == null ? List.of() : patients);
+    }
+
+    /**
+     * Who is calling. For a tablet, {@code userId} is the device id and
+     * {@code patientIds} holds exactly the one patient it was paired to.
+     */
     public record SmaranPrincipal(String userId, String role, List<String> patientIds) {
     }
 }

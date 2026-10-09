@@ -54,14 +54,17 @@ class AuthorizationMatrixIT extends ApiTest {
     static final Map<String, Map<Who, Integer>> GROUPS = Map.of(
             // Set the patient up and manage her access.
             "CAREGIVE", table(401, OK, 404, 403, 403, OK, 403, 403),
-            // What her tablet does, and her family on her behalf.
-            "PLAY", table(401, OK, 404, 403, 403, OK, OK, 404),
+            // What her family can do on her behalf. Her tablet does not use these:
+            // it has its own endpoints, below, and is refused here.
+            "PLAY", table(401, OK, 404, 403, 403, OK, 403, 403),
             // Read the dashboard and the report: the one thing a doctor may do.
             "CLINICAL_READ", table(401, OK, 404, OK, 404, OK, 403, 403),
             // A caregiver's own list and their patient creation.
             "CAREGIVER_ONLY", table(401, OK, OK, 403, 403, 403, 403, 403),
             "ADMIN_ONLY", table(401, 403, 403, 403, 403, OK, 403, 403),
             "DOCTOR_ONLY", table(401, 403, 403, OK, OK, 403, 403, 403),
+            // The tablet's own endpoints: only a paired tablet, and always its own patient.
+            "DEVICE_ONLY", table(401, 403, 403, 403, 403, 403, OK, OK),
             // Any signed-in person, but a tablet is not a person.
             "PERSON_ONLY", table(401, OK, OK, OK, OK, OK, 401, 401));
 
@@ -141,6 +144,21 @@ class AuthorizationMatrixIT extends ApiTest {
         e.add(new Endpoint("CLINICAL_READ", HttpMethod.GET, "/api/report/patient/{p}", null));
         e.add(new Endpoint("CLINICAL_READ", HttpMethod.GET, "/api/biomarker/{p}/trend", null));
 
+        // DEVICE_ONLY: no patient in the path, because the tablet's token names her.
+        e.add(new Endpoint("DEVICE_ONLY", HttpMethod.GET, "/api/device/me", null));
+        e.add(new Endpoint("DEVICE_ONLY", HttpMethod.PATCH, "/api/device/me", "{}"));
+        e.add(new Endpoint("DEVICE_ONLY", HttpMethod.GET, "/api/device/game/route", null));
+        e.add(new Endpoint("DEVICE_ONLY", HttpMethod.GET, "/api/device/garden", null));
+        e.add(new Endpoint("DEVICE_ONLY", HttpMethod.POST, "/api/device/garden/water", "{\"gameType\":\"KOI_ARE_JUMPING\"}"));
+        e.add(new Endpoint("DEVICE_ONLY", HttpMethod.POST, "/api/device/sessions",
+                "{\"gameType\":\"KOI_ARE_JUMPING\",\"startedAt\":\"2026-10-07T04:30:00Z\"}"));
+        e.add(new Endpoint("DEVICE_ONLY", HttpMethod.POST, "/api/device/sessions/batch", "{\"sessions\":[],\"vectors\":[]}"));
+        e.add(new Endpoint("DEVICE_ONLY", HttpMethod.POST, "/api/device/biomarker/vector", "{}"));
+        e.add(new Endpoint("DEVICE_ONLY", HttpMethod.POST, "/api/device/mood", "{\"mood\":\"QUIET\",\"localHour\":9}"));
+        e.add(new Endpoint("DEVICE_ONLY", HttpMethod.GET, "/api/device/objects", null));
+        e.add(new Endpoint("DEVICE_ONLY", HttpMethod.GET, "/api/device/family/members", null));
+        e.add(new Endpoint("DEVICE_ONLY", HttpMethod.GET, "/api/device/reminders", null));
+
         // Role-only endpoints: no patient in the path.
         e.add(new Endpoint("CAREGIVER_ONLY", HttpMethod.GET, "/api/patients", null));
         e.add(new Endpoint("CAREGIVER_ONLY", HttpMethod.POST, "/api/patients", "{\"name\":\"x\"}"));
@@ -199,6 +217,6 @@ class AuthorizationMatrixIT extends ApiTest {
         }
         long groups = endpoints().stream().map(Endpoint::group).distinct().count();
         assertEquals(GROUPS.size(), groups, "a group is defined but has no endpoint, or the reverse");
-        assertTrue(endpoints().size() >= 25, "the matrix should cover every patient endpoint");
+        assertTrue(endpoints().size() >= 35, "the matrix should cover every patient endpoint");
     }
 }

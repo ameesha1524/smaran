@@ -76,7 +76,7 @@ class SchemaAndIngestionIT extends PostgresIntegrationTest {
     void migrationsApplied() {
         List<String> versions = jdbc.queryForList(
                 "select version from flyway_schema_history where success order by installed_rank", String.class);
-        assertEquals(List.of("1", "2", "3"), versions);
+        assertEquals(List.of("1", "2", "3", "4"), versions);
         Integer failed = jdbc.queryForObject(
                 "select count(*) from flyway_schema_history where not success", Integer.class);
         assertEquals(0, failed);

@@ -2,281 +2,109 @@ package org.smaran.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 
-import io.jsonwebtoken.Claims;
-import java.time.Clock;
-import java.time.Duration;
-import java.time.Instant;
-import java.time.ZoneId;
-import java.time.temporal.ChronoUnit;
-import java.util.List;
-import java.util.Optional;
-import org.junit.jupiter.api.BeforeEach;
+import java.util.HashSet;
+import java.util.Set;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
-import org.smaran.config.JwtService;
-import org.smaran.domain.DevicePairing;
-import org.smaran.repo.DevicePairingRepository;
-import org.smaran.repo.PatientRepository;
-import org.springframework.http.HttpStatus;
-import org.springframework.web.server.ResponseStatusException;
 
 /**
- * Pairing's promises, as tests: the code is never stored, it works once and
- * briefly, guessing is throttled, and removing a tablet ends its access.
+ * The parts of pairing that are plain functions: the alphabet, how a typed code
+ * is read, how it is hashed. What needs a database (single use, expiry, the
+ * rate limit, a race between two tablets) is in PairingIT.
  */
 class PairingServiceTest {
 
-    private static final String SECRET = "test-secret-test-secret-test-secret-32b";
-    private static final String PATIENT = "patient-1";
-
-    private DevicePairingRepository repo;
-    private PatientRepository patients;
-    private JwtService jwt;
-    private PairingService service;
-    private MutableClock clock;
-
-    @BeforeEach
-    void setUp() {
-        repo = mock(DevicePairingRepository.class);
-        patients = mock(PatientRepository.class);
-        jwt = new JwtService(SECRET, 15);
-        // Three failures per fifteen minutes, so the limit is cheap to reach.
-        service = new PairingService(repo, patients, jwt, SECRET, 10, 180, 3, 15);
-        clock = new MutableClock(Instant.now().truncatedTo(ChronoUnit.SECONDS));
-        service.useClock(clock);
-        when(patients.existsById(PATIENT)).thenReturn(true);
-    }
-
-    /* ----------------------------------------------------------- codes */
-
     @Test
-    @DisplayName("codes are eight symbols from the unambiguous alphabet")
-    void codeShape() {
-        for (int i = 0; i < 200; i++) {
-            String code = service.generateCode();
-            assertEquals(8, code.length());
-            for (char c : code.toCharArray()) {
-                assertTrue(PairingService.ALPHABET.indexOf(c) >= 0, "unexpected " + c);
-            }
+    @DisplayName("the alphabet is the prompt's 27 distinct symbols, with nothing easily mistaken")
+    void alphabet() {
+        assertEquals("ACDEFGHJKMNPQRTUVWXYZ234679", PairingService.ALPHABET);
+        assertEquals(27, PairingService.ALPHABET.length());
+        Set<Character> seen = new HashSet<>();
+        for (char c : PairingService.ALPHABET.toCharArray()) {
+            assertTrue(seen.add(c), "duplicate symbol " + c);
         }
-        for (char banned : "ILOU01".toCharArray()) {
-            assertEquals(-1, PairingService.ALPHABET.indexOf(banned));
+        for (char c : "01OIL5SB8".toCharArray()) {
+            assertFalse(PairingService.ALPHABET.indexOf(c) >= 0, "should not contain " + c);
         }
     }
 
     @Test
-    @DisplayName("typing is forgiving about case, spaces and the dash — and strict about the rest")
-    void normalise() {
-        assertEquals("ABCDEFGH", PairingService.normalise("abcd-efgh"));
-        assertEquals("ABCDEFGH", PairingService.normalise(" ab cd efgh "));
-        assertNull(PairingService.normalise("ABCD-EFG1"));
-        assertNull(PairingService.normalise("ABCD"));
+    @DisplayName("a typed code is read the same however it is capitalised, spaced or dashed")
+    void normalisation() {
+        assertEquals("HJ4K2M", PairingService.normalise("HJ4K-2M"));
+        assertEquals("HJ4K2M", PairingService.normalise("hj4k2m"));
+        assertEquals("HJ4K2M", PairingService.normalise("  hj4k - 2m "));
+        assertEquals("HJ4K2M", PairingService.normalise("H J 4 K 2 M"));
+    }
+
+    @Test
+    @DisplayName("anything that could not have been issued is rejected before it reaches the database")
+    void malformed() {
         assertNull(PairingService.normalise(null));
-        assertEquals("ABCD-EFGH", PairingService.format("ABCDEFGH"));
+        assertNull(PairingService.normalise(""));
+        assertNull(PairingService.normalise("HJ4K2"), "too short");
+        assertNull(PairingService.normalise("HJ4K2MX"), "too long");
+        assertNull(PairingService.normalise("HJ4K20"), "0 is not in the alphabet");
+        assertNull(PairingService.normalise("HJ4K2I"), "I is not in the alphabet");
+        assertNull(PairingService.normalise("HJ4K2!"), "punctuation");
     }
 
     @Test
-    @DisplayName("the stored hash is keyed, stable, and never the code")
-    void hashing() {
-        String h = service.hash("ABCDEFGH");
-        assertEquals(64, h.length());
-        assertEquals(h, service.hash("ABCDEFGH"));
-        assertFalse(h.contains("ABCDEFGH"));
-        assertFalse(h.equals(service.hash("ABCDEFGJ")));
+    @DisplayName("a code is shown as HJ4K-2M")
+    void display() {
+        assertEquals("HJ4K-2M", PairingService.format("HJ4K2M"));
     }
 
     @Test
-    @DisplayName("issuing stores only the hash, expires in ten minutes, and retires unused codes")
-    void issue() {
-        when(repo.existsByCodeHash(anyString())).thenReturn(false);
-        PairingService.IssuedCode issued = service.issueCode(PATIENT, "carer-1");
-
-        ArgumentCaptor<DevicePairing> saved = ArgumentCaptor.forClass(DevicePairing.class);
-        verify(repo).save(saved.capture());
-        verify(repo).retireUnusedCodes(PATIENT, clock.instant());
-
-        DevicePairing row = saved.getValue();
-        assertEquals(service.hash(PairingService.normalise(issued.code())), row.getCodeHash());
-        assertEquals(clock.instant().plus(Duration.ofMinutes(10)), row.getExpiresAt());
-        assertEquals("carer-1", row.getCreatedBy());
-        assertTrue(issued.code().matches("[A-Z2-9]{4}-[A-Z2-9]{4}"));
+    @DisplayName("the stored hash depends on the pepper, so a database copy alone cannot be checked against guesses")
+    void pepper() {
+        PairingService a = service("pepper-one");
+        PairingService b = service("pepper-two");
+        assertEquals(a.hash("HJ4K2M"), a.hash("HJ4K2M"));
+        assertNotEquals(a.hash("HJ4K2M"), b.hash("HJ4K2M"));
+        assertNotEquals(a.hash("HJ4K2M"), a.hash("HJ4K2N"));
+        assertEquals(64, a.hash("HJ4K2M").length());
     }
 
     @Test
-    @DisplayName("no code for a patient who doesn't exist")
-    void issueUnknown() {
-        var e = assertThrows(ResponseStatusException.class, () -> service.issueCode("nobody", "carer-1"));
-        assertEquals(HttpStatus.NOT_FOUND, e.getStatusCode());
-        verify(repo, never()).save(any());
-    }
-
-    /* ---------------------------------------------------------- redeem */
-
-    private DevicePairing pending(String code) {
-        DevicePairing row = new DevicePairing();
-        row.setPatientId(PATIENT);
-        row.setCodeHash(service.hash(code));
-        row.setExpiresAt(clock.instant().plus(Duration.ofMinutes(10)));
-        when(repo.findByCodeHash(service.hash(code))).thenReturn(Optional.of(row));
-        return row;
-    }
-
-    @Test
-    @DisplayName("a redeemed code yields a device token scoped to her alone")
-    void redeem() {
-        DevicePairing row = pending("ABCDEFGH");
-        when(repo.claim(eq(row.getId()), any(), eq("Living room"), any())).thenReturn(1);
-
-        PairingService.Redemption r = service.redeem("abcd-efgh", "Living room", "10.0.0.1");
-
-        Claims claims = jwt.parse(r.deviceToken());
-        assertNotNull(claims);
-        assertEquals(PATIENT, claims.getSubject());
-        assertEquals("PATIENT", claims.get("role", String.class));
-        assertEquals(List.of(PATIENT), claims.get("patients", List.class));
-        assertEquals(row.getId(), claims.get("did", String.class));
-        assertFalse(jwt.isRefresh(claims));
-        assertEquals(clock.instant().plus(Duration.ofDays(180)), r.expiresAt());
-    }
-
-    @Test
-    @DisplayName("a used, expired or superseded code gets the same answer as a wrong one")
-    void notClaimable() {
-        DevicePairing row = pending("ABCDEFGH");
-        when(repo.claim(eq(row.getId()), any(), anyString(), any())).thenReturn(0);
-        var used = assertThrows(ResponseStatusException.class, () -> service.redeem("ABCDEFGH", null, "a"));
-        var wrong = assertThrows(ResponseStatusException.class, () -> service.redeem("ZZZZZZZZ", null, "b"));
-        var malformed = assertThrows(ResponseStatusException.class, () -> service.redeem("hello", null, "c"));
-        assertEquals(HttpStatus.NOT_FOUND, used.getStatusCode());
-        assertEquals(used.getStatusCode(), wrong.getStatusCode());
-        assertEquals(used.getReason(), wrong.getReason());
-        assertEquals(used.getReason(), malformed.getReason());
-    }
-
-    @Test
-    @DisplayName("repeated failures lock that client out — even from a valid code — for the window only")
-    void rateLimited() {
-        for (int i = 0; i < 3; i++) {
-            assertThrows(ResponseStatusException.class, () -> service.redeem("ZZZZZZZZ", null, "attacker"));
+    @DisplayName("generated codes are six symbols from the alphabet, and not all the same")
+    void generation() {
+        PairingService s = service("p");
+        Set<String> seen = new HashSet<>();
+        for (int i = 0; i < 200; i++) {
+            String code = s.generateCode();
+            assertEquals(PairingService.CODE_LENGTH, code.length());
+            assertEquals(code, PairingService.normalise(code));
+            seen.add(code);
         }
-        DevicePairing row = pending("ABCDEFGH");
-        when(repo.claim(eq(row.getId()), any(), anyString(), any())).thenReturn(1);
-
-        var locked = assertThrows(ResponseStatusException.class, () -> service.redeem("ABCDEFGH", null, "attacker"));
-        assertEquals(HttpStatus.TOO_MANY_REQUESTS, locked.getStatusCode());
-        verify(repo, never()).claim(anyString(), any(), anyString(), any());
-
-        // Someone else is unaffected, and the lock lifts once the window passes.
-        assertNotNull(service.redeem("ABCDEFGH", null, "family"));
-        clock.advance(Duration.ofMinutes(16));
-        assertNotNull(service.redeem("ABCDEFGH", null, "attacker"));
-    }
-
-    /* --------------------------------------------------------- devices */
-
-    private DevicePairing paired() {
-        DevicePairing row = new DevicePairing();
-        row.setPatientId(PATIENT);
-        row.setCodeHash("x");
-        row.setExpiresAt(clock.instant().minus(Duration.ofMinutes(5)));
-        row.setRedeemedAt(clock.instant().minus(Duration.ofMinutes(10)));
-        row.setTokenExpiresAt(clock.instant().plus(Duration.ofDays(100)));
-        row.setLastSeenAt(clock.instant());
-        when(repo.findById(row.getId())).thenReturn(Optional.of(row));
-        when(repo.findByIdAndPatientId(row.getId(), PATIENT)).thenReturn(Optional.of(row));
-        return row;
+        assertTrue(seen.size() > 190, "200 draws from 387 million should almost never repeat");
     }
 
     @Test
-    @DisplayName("removing a tablet ends its access immediately, not at the next cache refresh")
-    void revoke() {
-        DevicePairing row = paired();
-        assertTrue(service.isDeviceActive(row.getId()));
-
-        service.revoke(PATIENT, row.getId());
-        assertNotNull(row.getRevokedAt());
-        assertFalse(service.isDeviceActive(row.getId()));
+    @DisplayName("a tablet's fingerprint is kept only if it looks like the random id the tablet made")
+    void fingerprint() {
+        assertEquals("6f1c2d3e-aaaa-bbbb-cccc-1234567890ab", PairingService.fingerprint("6f1c2d3e-aaaa-bbbb-cccc-1234567890ab"));
+        assertNull(PairingService.fingerprint(null));
+        assertNull(PairingService.fingerprint(""));
+        assertNull(PairingService.fingerprint("has spaces"));
+        assertNull(PairingService.fingerprint("x".repeat(65)));
+        assertNull(PairingService.fingerprint("<script>"));
     }
 
     @Test
-    @DisplayName("the per-request check is cached, and last-seen is written coarsely")
-    void cached() {
-        DevicePairing row = paired();
-        assertTrue(service.isDeviceActive(row.getId()));
-        assertTrue(service.isDeviceActive(row.getId()));
-        verify(repo, times(1)).findById(row.getId());
-        verify(repo, never()).touch(anyString(), any());
-
-        clock.advance(Duration.ofMinutes(11));
-        assertTrue(service.isDeviceActive(row.getId()));
-        verify(repo).touch(row.getId(), clock.instant());
-    }
-
-    @Test
-    @DisplayName("an expired device token is not honoured")
-    void expiredDevice() {
-        DevicePairing row = paired();
-        row.setTokenExpiresAt(clock.instant().minusSeconds(1));
-        assertFalse(service.isDeviceActive(row.getId()));
-    }
-
-    @Test
-    @DisplayName("someone else's patient's tablet cannot be removed through this one")
-    void revokeWrongPatient() {
-        DevicePairing row = paired();
-        var e = assertThrows(ResponseStatusException.class, () -> service.revoke("patient-2", row.getId()));
-        assertEquals(HttpStatus.NOT_FOUND, e.getStatusCode());
-    }
-
-    @Test
-    @DisplayName("labels are the family's words, kept printable and bounded")
-    void labels() {
+    @DisplayName("a label is printable and bounded")
+    void label() {
         assertEquals("Tablet", PairingService.label(null));
         assertEquals("Tablet", PairingService.label("   "));
-        assertEquals("Living room", PairingService.label("  Living\u0007 room "));
+        assertEquals("Living room", PairingService.label("  Living\u0000 room \n"));
         assertEquals(120, PairingService.label("x".repeat(500)).length());
     }
 
-    /* --------------------------------------------------------- helpers */
-
-    static final class MutableClock extends Clock {
-        private Instant now;
-
-        MutableClock(Instant start) {
-            this.now = start;
-        }
-
-        void advance(Duration d) {
-            now = now.plus(d);
-        }
-
-        @Override
-        public ZoneId getZone() {
-            return ZoneId.of("UTC");
-        }
-
-        @Override
-        public Clock withZone(ZoneId zone) {
-            return this;
-        }
-
-        @Override
-        public Instant instant() {
-            return now;
-        }
+    private static PairingService service(String pepper) {
+        return new PairingService(null, null, null, null, null, java.time.Clock.systemUTC(), pepper, 72, 180, 5, 15);
     }
 }

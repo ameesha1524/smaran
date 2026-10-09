@@ -82,7 +82,7 @@ public class AuthController {
     @GetMapping("/me")
     public Dto.MeResponse me() {
         SmaranPrincipal principal = guard.current();
-        if (principal == null || "PATIENT".equals(principal.role())) {
+        if (principal == null || "DEVICE".equals(principal.role())) {
             // A tablet is not a user: it has no account to describe.
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
         }

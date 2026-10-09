@@ -14,14 +14,14 @@ import type {
   GameSession,
   GardenState,
   MeaningfulObject,
+  DeviceMe,
   PairedDevice,
   PairingCode,
   Patient,
   RedeemResult,
   ReminderSchedule,
-  CognitiveProfile,
 } from './types'
-import { cacheGet, cacheSet, get, getAll, put, remove } from './db'
+import { cacheGet, cacheSet, get, getAll, getDeviceFingerprint, put, remove } from './db'
 
 /**
  * Two kinds of credential, kept apart on purpose.
@@ -66,10 +66,11 @@ export function getDeviceToken(): string | null {
   return localStorage.getItem(DEVICE_KEY)
 }
 
-/** The credential to send: a signed-in person's if there is one, else this tablet's. */
-export function currentBearer(): string | null {
-  return accessToken ?? getDeviceToken()
-}
+/*
+ * A person's calls and a tablet's calls never share a credential. A caregiver who
+ * signs in on the tablet's browser does not turn the tablet into a caregiver, and
+ * the tablet's token is never sent to a person's endpoint.
+ */
 
 export class OfflineError extends Error {
   constructor() {
@@ -78,7 +79,7 @@ export class OfflineError extends Error {
 }
 
 async function request<T>(path: string, init: RequestInit = {}, retried = false): Promise<T> {
-  const token = currentBearer()
+  const token = accessToken
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     ...((init.headers as Record<string, string>) ?? {}),
@@ -124,6 +125,70 @@ export class HttpError extends Error {
   }
 }
 
+/* ------------------------------------------------- a paired tablet's calls */
+
+const SUSPENDED_KEY = 'smaran.deviceSuspendedAt'
+/** While suspended, ask the server again this often, in case the refusal was a mistake. */
+const PROBE_EVERY_MS = 60 * 60 * 1000
+
+/**
+ * Has the server stopped honouring this tablet's token?
+ *
+ * When the family removes a tablet, its next request is refused. The tablet
+ * must not announce that to her: it goes quiet, keeps everything she has, and
+ * behaves exactly as if it were offline. It still asks again once an hour, so a
+ * refusal that was a mistake mends itself. Pairing again clears it.
+ */
+export function deviceSuspended(): boolean {
+  return localStorage.getItem(SUSPENDED_KEY) !== null
+}
+
+function markSuspended() {
+  localStorage.setItem(SUSPENDED_KEY, String(Date.now()))
+}
+
+export function clearSuspended() {
+  localStorage.removeItem(SUSPENDED_KEY)
+}
+
+function suspendedAndNotDueToProbe(): boolean {
+  const at = Number(localStorage.getItem(SUSPENDED_KEY))
+  return Number.isFinite(at) && at > 0 && Date.now() - at < PROBE_EVERY_MS
+}
+
+/**
+ * A call on the tablet's own surface, /api/device/**. It carries the tablet's
+ * token and nothing else. A refusal (401 or 403) is not shown to her: it
+ * suspends the tablet's talking to the server and is reported as "offline", so
+ * reads fall back to what she already has and writes are queued.
+ */
+async function deviceRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const token = getDeviceToken()
+  if (!token || suspendedAndNotDueToProbe()) throw new OfflineError()
+
+  let res: Response
+  try {
+    res = await fetch(path, {
+      ...init,
+      headers: {
+        'Content-Type': 'application/json',
+        ...((init.headers as Record<string, string>) ?? {}),
+        Authorization: `Bearer ${token}`,
+      },
+    })
+  } catch {
+    throw new OfflineError()
+  }
+  if (res.status === 401 || res.status === 403) {
+    markSuspended()
+    throw new OfflineError()
+  }
+  if (!res.ok) throw await HttpError.from(res)
+  clearSuspended()
+  if (res.status === 204) return undefined as T
+  return (await res.json()) as T
+}
+
 let refreshing: Promise<AuthSession | null> | null = null
 
 /**
@@ -156,10 +221,10 @@ export function refreshSession(): Promise<AuthSession | null> {
   return refreshing
 }
 
-/** Read-through: network first, cache second, never an error screen. */
-async function cachedGet<T>(path: string, cacheKey: string): Promise<T | undefined> {
+/** Read-through for the tablet: network first, cache second, never an error screen. */
+async function cachedDeviceGet<T>(path: string, cacheKey: string): Promise<T | undefined> {
   try {
-    const fresh = await request<T>(path)
+    const fresh = await deviceRequest<T>(path)
     await cacheSet(cacheKey, fresh)
     return fresh
   } catch {
@@ -230,8 +295,15 @@ export const auth = {
 
 /* ------------------------------------------------------------ patient */
 
+/** What the tablet knows of its own patient, and the one thing it may change about her. */
+export const device = {
+  me: () => cachedDeviceGet<DeviceMe>('/api/device/me', 'me'),
+  setLanguage: (languageCode: string) =>
+    deviceRequest<DeviceMe>('/api/device/me', { method: 'PATCH', body: JSON.stringify({ languageCode }) }),
+}
+
+/** The family's side: setting a patient up and adding her. */
 export const patients = {
-  profile: (id: string) => cachedGet<Patient & { cognitiveProfile: CognitiveProfile }>(`/api/patient/${id}/profile`, `profile:${id}`),
   update: (id: string, patch: Partial<Patient>) =>
     request<Patient>(`/api/patient/${id}/profile`, { method: 'PATCH', body: JSON.stringify(patch) }),
   /** A caregiver adds the person they care for. The guardian's consent is part of the request, and required. */
@@ -241,9 +313,10 @@ export const patients = {
 
 /* -------------------------------------------------------------- games */
 
+// The tablet's calls name no patient: the server reads her from the token.
 export const games = {
-  route: (patientId: string) => cachedGet<GameRoute>(`/api/game/${patientId}/route`, `route:${patientId}`),
-  objects: (patientId: string) => cachedGet<MeaningfulObject[]>(`/api/patient/${patientId}/objects`, `objects:${patientId}`),
+  route: (patientId: string) => cachedDeviceGet<GameRoute>('/api/device/game/route', `route:${patientId}`),
+  objects: (patientId: string) => cachedDeviceGet<MeaningfulObject[]>('/api/device/objects', `objects:${patientId}`),
 }
 
 /* ----------------------------------------------------------- sessions */
@@ -255,7 +328,7 @@ export const games = {
  */
 export async function submitSession(session: GameSession): Promise<{ queued: boolean }> {
   try {
-    await request('/api/session', { method: 'POST', body: JSON.stringify(session) })
+    await deviceRequest('/api/device/sessions', { method: 'POST', body: JSON.stringify(session) })
     return { queued: false }
   } catch {
     await put('pending_sessions', session)
@@ -269,7 +342,7 @@ export async function submitSession(session: GameSession): Promise<{ queued: boo
 export const garden = {
   async state(patientId: string): Promise<GardenState | undefined> {
     try {
-      const fresh = await request<GardenState>(`/api/garden/${patientId}`)
+      const fresh = await deviceRequest<GardenState>('/api/device/garden')
       await put('garden_state', fresh)
       return fresh
     } catch {
@@ -280,7 +353,7 @@ export const garden = {
   /** Watering is the only "score" in Smaran, and it is a flower, not a number. */
   async water(patientId: string, gameType: string): Promise<GardenState | undefined> {
     try {
-      const fresh = await request<GardenState>(`/api/garden/${patientId}/water`, {
+      const fresh = await deviceRequest<GardenState>('/api/device/garden/water', {
         method: 'POST',
         body: JSON.stringify({ gameType, at: new Date().toISOString() }),
       })
@@ -299,7 +372,7 @@ export const garden = {
 export const family = {
   async members(patientId: string): Promise<FamilyMember[]> {
     try {
-      const fresh = await request<FamilyMember[]>(`/api/family/${patientId}/members`)
+      const fresh = await deviceRequest<FamilyMember[]>('/api/device/family/members')
       await put('family_members', { patientId, members: fresh })
       return fresh
     } catch {
@@ -310,15 +383,15 @@ export const family = {
   add: (patientId: string, body: FormData) =>
     fetch(`/api/family/${patientId}/member`, {
       method: 'POST',
-      headers: currentBearer() ? { Authorization: `Bearer ${currentBearer()}` } : {},
+      headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
       body,
     }).then((r) => {
       if (!r.ok) throw new Error(`${r.status}`)
       return r.json() as Promise<FamilyMember>
     }),
   /** Correct recognition tells the backend to advance this member's phase. */
-  recognised: (patientId: string, memberId: string, correct: boolean, latencyMs: number) =>
-    request(`/api/family/${patientId}/member/${memberId}/result`, {
+  recognised: (_patientId: string, memberId: string, correct: boolean, latencyMs: number) =>
+    deviceRequest(`/api/device/family/members/${encodeURIComponent(memberId)}/result`, {
       method: 'POST',
       body: JSON.stringify({ correct, latencyMs }),
     }).catch(() => undefined),
@@ -328,7 +401,7 @@ export const family = {
 
 export async function submitVector(vector: AcousticVector): Promise<void> {
   try {
-    await request('/api/biomarker/vector', { method: 'POST', body: JSON.stringify(vector) })
+    await deviceRequest('/api/device/biomarker/vector', { method: 'POST', body: JSON.stringify(vector) })
   } catch {
     await put('pending_vectors', vector)
     await requestBackgroundSync()
@@ -338,8 +411,7 @@ export async function submitVector(vector: AcousticVector): Promise<void> {
 /* ---------------------------------------------------------- reminders */
 
 export const reminders = {
-  schedule: (patientId: string) =>
-    cachedGet<ReminderSchedule[]>(`/api/reminder/${patientId}/schedule`, `reminders:${patientId}`),
+  schedule: (patientId: string) => cachedDeviceGet<ReminderSchedule[]>('/api/device/reminders', `reminders:${patientId}`),
   save: (patientId: string, list: ReminderSchedule[]) =>
     request<ReminderSchedule[]>(`/api/reminder/${patientId}/schedule`, {
       method: 'PUT',
@@ -426,7 +498,7 @@ export const caregiver = {
    */
   report: async (patientId: string): Promise<Blob> => {
     const send = () =>
-      fetch(`/api/report/patient/${patientId}`, { headers: { Authorization: `Bearer ${currentBearer() ?? ''}` } })
+      fetch(`/api/report/patient/${patientId}`, { headers: { Authorization: `Bearer ${accessToken ?? ''}` } })
     let res = await send()
     if (res.status === 401 && getAccessToken() !== null && (await refreshSession())) res = await send()
     if (!res.ok) throw await HttpError.from(res)
@@ -475,15 +547,21 @@ export class PairingError extends Error {
  * throw a PairingError the screen can explain, instead of going through
  * `request` and its quiet offline behaviour.
  */
-async function pairingCall<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const token = currentBearer()
+async function pairingCall<T>(path: string, init: RequestInit = {}, asPerson = true, retried = false): Promise<T> {
+  // The family's calls carry the signed-in person's token. Redeeming carries
+  // none, even if a person happens to be signed in on this browser: the code is
+  // the credential.
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-  if (token) headers.Authorization = `Bearer ${token}`
+  if (asPerson && accessToken) headers.Authorization = `Bearer ${accessToken}`
   let res: Response
   try {
     res = await fetch(path, { ...init, headers })
   } catch {
     throw new PairingError('offline')
+  }
+  // The family's token lasts fifteen minutes; renew it once, as every other call does.
+  if (asPerson && res.status === 401 && accessToken !== null && !retried && (await refreshSession())) {
+    return pairingCall<T>(path, init, asPerson, true)
   }
   if (res.status === 429) throw new PairingError('rate-limited')
   if (res.status === 400 || res.status === 404 || res.status === 410) throw new PairingError('invalid')
@@ -508,11 +586,12 @@ export const pairing = {
       { method: 'DELETE' },
     ),
   /** Tablet side: trade a code for a device token. Works without being signed in. */
-  redeem: (code: string, deviceLabel: string) =>
-    pairingCall<RedeemResult>('/api/devices/redeem', {
-      method: 'POST',
-      body: JSON.stringify({ code, deviceLabel }),
-    }),
+  redeem: async (code: string, deviceLabel: string) =>
+    pairingCall<RedeemResult>(
+      '/api/pairing/redeem',
+      { method: 'POST', body: JSON.stringify({ code, deviceLabel, deviceFingerprint: await getDeviceFingerprint() }) },
+      false,
+    ),
 }
 
 /* --------------------------------------------------------------- sync */
@@ -539,9 +618,9 @@ export async function syncNow(patientId: string): Promise<SyncOutcome> {
   }
 
   try {
-    await request('/api/sync/sessions', {
+    await deviceRequest('/api/device/sessions/batch', {
       method: 'POST',
-      body: JSON.stringify({ patientId, sessions, vectors, blooms }),
+      body: JSON.stringify({ sessions, vectors, blooms }),
     })
   } catch {
     return { sessions: sessions.length, vectors: vectors.length, blooms: blooms.length, ok: false }
@@ -575,7 +654,7 @@ async function requestBackgroundSync() {
 /* -------------------------------------------- federated learning (ph. 2) */
 
 export async function uploadGradients(payload: { deviceId: string; patientId: string; modelVersion: string; cipher: string }) {
-  return request<{ modelVersion: string; weights: number[] }>('/api/fl/gradients', {
+  return deviceRequest<{ modelVersion: string; weights: number[] }>('/api/device/fl/gradients', {
     method: 'POST',
     body: JSON.stringify(payload),
   }).catch(() => undefined)

@@ -18,7 +18,7 @@ import AdminHome from './caregiver/AdminHome'
 import RequireRole from './components/RequireRole'
 import { AuthProvider, homeFor, useAuth } from './lib/auth'
 import Setup from './caregiver/Setup'
-import PairDevice from './caregiver/PairDevice'
+import Pair from './screens/Pair'
 import { SmaranProvider, useSmaran } from './state/SmaranContext'
 
 /**
@@ -30,13 +30,13 @@ import { SmaranProvider, useSmaran } from './state/SmaranContext'
  */
 
 function PatientEntry() {
-  const { caregiverSetupComplete, languageConfirmed } = useSmaran()
-  // Two gates, and neither belongs to the patient for long. The family sets the
-  // device up — by pairing it with their account, or locally with no account —
-  // and she confirms the language once. After that this route is the pond,
-  // unconditionally — no login, no onboarding screen, no mood gate. What used
-  // to be onboarding is now the first two sessions, observed silently.
-  if (!caregiverSetupComplete) return <Navigate to="/caregiver/pair" replace />
+  const { devicePaired, languageConfirmed } = useSmaran()
+  // Two gates, and neither belongs to the patient for long. The family pairs the
+  // tablet with their account, and she confirms the language once. After that
+  // this route is the pond, unconditionally — no login, no onboarding screen, no
+  // mood gate. What used to be onboarding is now the first two sessions,
+  // observed silently. A tablet the family later removes stays on the pond.
+  if (!devicePaired) return <Navigate to="/pair" replace />
   if (!languageConfirmed) return <Navigate to="/language" replace />
   return <Home />
 }
@@ -54,6 +54,7 @@ export default function App() {
     <SmaranProvider>
       <Routes>
         <Route path="/" element={<PatientEntry />} />
+        <Route path="/pair" element={<Pair />} />
         <Route path="/language" element={<LanguageChoice />} />
         <Route path="/journal" element={<Journal />} />
         <Route path="/games" element={<GamesMenu />} />
@@ -88,7 +89,8 @@ export default function App() {
         />
         {/* Sample data for a screen to look at with no server. Development builds only. */}
         {import.meta.env.DEV && <Route path="/caregiver/demo" element={<Dashboard demo />} />}
-        <Route path="/caregiver/setup" element={<Setup />} />
+        {/* Setting a patient up on the tablet itself belongs to the time before pairing. Development builds only. */}
+        {import.meta.env.DEV && <Route path="/caregiver/setup" element={<Setup />} />}
 
         <Route
           path="/doctor"
@@ -114,7 +116,7 @@ export default function App() {
             </RequireRole>
           }
         />
-        <Route path="/caregiver/pair" element={<PairDevice />} />
+        <Route path="/caregiver/pair" element={<Navigate to="/pair" replace />} />
 
         {/* Anything unrecognised returns her to the pond rather than a 404. */}
         <Route path="*" element={<Navigate to="/" replace />} />

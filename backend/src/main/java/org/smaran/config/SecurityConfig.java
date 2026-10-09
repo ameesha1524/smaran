@@ -68,7 +68,7 @@ public class SecurityConfig {
                     auth.requestMatchers("/error").permitAll();
                     // A tablet redeeming a pairing code has no token yet — the
                     // code is the credential, and PairingService rate-limits it.
-                    auth.requestMatchers(HttpMethod.POST, "/api/devices/redeem").permitAll();
+                    auth.requestMatchers(HttpMethod.POST, "/api/pairing/redeem").permitAll();
                     auth.requestMatchers(HttpMethod.OPTIONS, "/**").permitAll();
                     if (openDemo) {
                         auth.anyRequest().permitAll();
@@ -81,6 +81,9 @@ public class SecurityConfig {
                         auth.requestMatchers("/api/caregiver/**").hasAnyRole("CAREGIVER", "DOCTOR", "ADMIN");
                         auth.requestMatchers("/api/admin/**").hasRole("ADMIN");
                         auth.requestMatchers("/api/doctor/**").hasRole("DOCTOR");
+                        // The tablet's own surface. Nothing else accepts a device token
+                        // (AccessGuard refuses it), and nothing here accepts a person's.
+                        auth.requestMatchers("/api/device/**").hasRole("DEVICE");
                         auth.anyRequest().authenticated();
                     }
                 })

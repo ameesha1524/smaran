@@ -57,6 +57,11 @@ self.addEventListener('activate', (event) => {
     (async () => {
       const keys = await caches.keys()
       await Promise.all(keys.filter((k) => !k.startsWith(VERSION)).map((k) => caches.delete(k)))
+      // Earlier versions kept API answers here, for whoever asked next. Drop them.
+      const runtime = await caches.open(RUNTIME)
+      for (const req of await runtime.keys()) {
+        if (new URL(req.url).pathname.startsWith('/api/')) await runtime.delete(req)
+      }
       await self.clients.claim()
 
       // Ask for periodic wake-ups where the browser supports them.
@@ -96,12 +101,13 @@ self.addEventListener('fetch', (event) => {
     return
   }
 
-  // API reads: stale-while-revalidate, so her last known state is on screen
-  // before the request even resolves.
-  if (url.pathname.startsWith('/api/')) {
-    event.respondWith(staleWhileRevalidate(req))
-    return
-  }
+  // API answers are never kept here. The cache is keyed by address alone, not by
+  // who asked, so a kept answer would be served to whoever asks next: to a
+  // different patient on a re-paired tablet, to a doctor whose access has ended.
+  // The page keeps what it needs for offline use in IndexedDB, and clears it when
+  // the tablet changes hands. Only the family media below, whose address contains
+  // the patient's id, is kept.
+  if (url.pathname.startsWith('/api/') && !url.pathname.startsWith('/api/device/media/')) return
 
   // Family photographs and voice notes: cache-first and kept. The grove has to
   // work offline or it is not a grove, it is a gallery of broken images.
@@ -126,18 +132,6 @@ async function cacheFirst(req: Request, cacheName: string): Promise<Response> {
   } catch {
     return cached ?? new Response('', { status: 504 })
   }
-}
-
-async function staleWhileRevalidate(req: Request): Promise<Response> {
-  const cache = await caches.open(RUNTIME)
-  const cached = await cache.match(req)
-  const network = fetch(req)
-    .then((res) => {
-      if (res.ok) void cache.put(req, res.clone())
-      return res
-    })
-    .catch(() => undefined)
-  return cached ?? (await network) ?? new Response(JSON.stringify(null), { headers: { 'Content-Type': 'application/json' } })
 }
 
 /* ---------------------------------------------------------------- sync */

@@ -6,10 +6,11 @@ import type { PairedDevice, PairingCode } from '../lib/types'
  * "Her tablet" — the family side of pairing.
  *
  * Generates the one-time code the tablet redeems, shows it large enough to
- * read across a room, counts it down, and lists the tablets that currently
+ * read across a room, counts it down (it lasts three days), lets it be copied
+ * to send to whoever is with the tablet, and lists the tablets that currently
  * hold access so any of them can be removed. Removing a tablet takes effect
- * on its very next request; the tablet itself falls back to its offline copy
- * and never shows her an error.
+ * on its very next request; the tablet itself goes quiet, keeps what she has,
+ * and never shows her an error. Nothing about her is deleted.
  */
 
 const MESSAGES: Record<PairingFailure, string> = {
@@ -26,6 +27,16 @@ function errorText(err: unknown): string {
 
 function remaining(expiresAt: string, now: number): number {
   return Math.max(0, Math.floor((Date.parse(expiresAt) - now) / 1000))
+}
+
+/** "2 days 23 h", "5 h 12 min", "3 min": a code lasts days, so a stopwatch would be the wrong shape. */
+function lasts(seconds: number): string {
+  const mins = Math.max(1, Math.ceil(seconds / 60))
+  const days = Math.floor(mins / 1440)
+  const hours = Math.floor((mins % 1440) / 60)
+  if (days > 0) return `${days} ${days === 1 ? 'day' : 'days'} ${hours} h`
+  if (hours > 0) return `${hours} h ${mins % 60} min`
+  return `${mins} min`
 }
 
 function ago(iso: string | null): string {
@@ -45,6 +56,7 @@ export default function PairingPanel({ patientId }: { patientId: string }) {
   const [error, setError] = useState<string | null>(null)
   const [confirming, setConfirming] = useState<string | null>(null)
   const [now, setNow] = useState(() => Date.now())
+  const [copied, setCopied] = useState(false)
 
   const loadDevices = useCallback(async () => {
     try {
@@ -62,7 +74,7 @@ export default function PairingPanel({ patientId }: { patientId: string }) {
   // Tick only while a code is on screen.
   useEffect(() => {
     if (!code) return
-    const t = window.setInterval(() => setNow(Date.now()), 1000)
+    const t = window.setInterval(() => setNow(Date.now()), 30_000)
     return () => window.clearInterval(t)
   }, [code])
 
@@ -81,6 +93,7 @@ export default function PairingPanel({ patientId }: { patientId: string }) {
       const fresh = await pairing.createCode(patientId)
       setCode(fresh)
       setNow(Date.now())
+      setCopied(false)
     } catch (err) {
       setError(errorText(err))
     } finally {
@@ -102,8 +115,15 @@ export default function PairingPanel({ patientId }: { patientId: string }) {
     }
   }
 
-  const mm = Math.floor(secondsLeft / 60)
-  const ss = String(secondsLeft % 60).padStart(2, '0')
+  const copy = async () => {
+    if (!code) return
+    try {
+      await navigator.clipboard.writeText(code.code)
+      setCopied(true)
+    } catch {
+      setCopied(false) // A browser that will not copy: the code is on screen to read out.
+    }
+  }
 
   return (
     <section className="soft-panel p-5" aria-labelledby="her-tablet">
@@ -112,7 +132,7 @@ export default function PairingPanel({ patientId }: { patientId: string }) {
       </h2>
       <p className="mb-4 font-sans" style={{ fontSize: 14, color: 'var(--chalk-dim)' }}>
         Pair the tablet she uses so her games reach this dashboard. On the tablet, open Smaran and type the code below.
-        A code works once and lasts ten minutes.
+        A code works once and lasts three days. If the tablet already shows her pond, open <strong>/pair</strong> on it.
       </p>
 
       {code && !expired && (
@@ -124,8 +144,11 @@ export default function PairingPanel({ patientId }: { patientId: string }) {
             {code.code}
           </span>
           <span className="font-sans" style={{ fontSize: 14, color: 'var(--chalk-dim)' }}>
-            Expires in {mm}:{ss}
+            Good for another {lasts(secondsLeft)}
           </span>
+          <button type="button" onClick={() => void copy()} className="pill stone" style={{ padding: '6px 16px', fontSize: 14, marginTop: 6 }}>
+            {copied ? 'Copied' : 'Copy the code'}
+          </button>
         </div>
       )}
       {expired && (

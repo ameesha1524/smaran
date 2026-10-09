@@ -157,10 +157,11 @@ public abstract class ApiTest extends PostgresIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn();
         String code = json.readTree(issued.getResponse().getContentAsString()).get("code").asText();
-        MvcResult redeemed = mvc.perform(post("/api/devices/redeem")
+        MvcResult redeemed = mvc.perform(post("/api/pairing/redeem")
                         .with(from(freshIp()))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(json.writeValueAsString(java.util.Map.of("code", code, "deviceLabel", "test tablet"))))
+                        .content(json.writeValueAsString(java.util.Map.of(
+                                "code", code, "deviceLabel", "test tablet", "deviceFingerprint", UUID.randomUUID().toString()))))
                 .andExpect(status().isOk())
                 .andReturn();
         return json.readTree(redeemed.getResponse().getContentAsString()).get("deviceToken").asText();
