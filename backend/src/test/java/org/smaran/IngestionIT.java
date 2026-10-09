@@ -615,4 +615,35 @@ class IngestionIT extends ApiTest {
         assertEquals("device", jdbc.queryForObject("select scoring_trust from game_session where id = ?", String.class, out.sessionId()));
         assertEquals(before + 1, meters.get("scoring_mismatch_total").counter().count());
     }
+
+    @Test
+    @DisplayName("a session with no recorded rounds has nothing to score from: it stays the tablet's, and is not a mismatch")
+    void noRoundsIsNotAMismatch() {
+        Patient p = patient();
+        SessionEnvelope e = Envelopes.withTrials(
+                Envelopes.of(p.getId(), "duck-roll-call", ago(2), Envelopes.c("EXECUTIVE", 61.5, 0.8)), List.of());
+        double mismatches = meters.get("scoring_mismatch_total").counter().count();
+        double rescored = meters.get("scoring_rescored_total").counter().count();
+        Outcome out = ingestion.ingest(p.getId(), null, e);
+        assertEquals(Status.ACCEPTED, out.status(), out.reason());
+        assertEquals("device", jdbc.queryForObject("select scoring_trust from game_session where id = ?", String.class, out.sessionId()));
+        assertEquals(mismatches, meters.get("scoring_mismatch_total").counter().count());
+        assertEquals(rescored, meters.get("scoring_rescored_total").counter().count());
+    }
+
+    @Test
+    @DisplayName("a tablet cannot dodge the re-scoring by calling its own scores precomputed")
+    void precomputedFlagDoesNotSkipTheCheck() {
+        Patient p = patient();
+        List<Object> trials = duckTrials();
+        ScoreContribution[] inflated = serverScores(trials).stream()
+                .map(c -> new ScoreContribution(c.target(), Math.min(100, c.raw() + 20), c.confidence(), c.because()))
+                .toArray(ScoreContribution[]::new);
+        SessionEnvelope e = Envelopes.withPrecomputed(
+                Envelopes.withTrials(Envelopes.of(p.getId(), "duck-roll-call", ago(2), inflated), trials), true);
+        double before = meters.get("scoring_mismatch_total").counter().count();
+        Outcome out = ingestion.ingest(p.getId(), null, e);
+        assertEquals(Status.ACCEPTED, out.status(), out.reason());
+        assertEquals(before + 1, meters.get("scoring_mismatch_total").counter().count());
+    }
 }

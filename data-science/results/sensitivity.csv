@@ -1,0 +1,57 @@
+variant,rule,name,shipped_sens_90d,shipped_false_alarms_per_patient_year,shipped_median_delay_days,sens_90d_at_2_false_alarms
+defaults,R0,Absolute level,0.1846,3.0894,87.5,0.1077
+defaults,R1,Single-session velocity,0.9692,67.7868,10.0,0.1128
+defaults,R2,Two-consecutive velocity,0.8103,19.5663,36.0,0.2769
+defaults,R3,CUSUM,0.7692,21.1882,40.0,0.3436
+noise x0.5,R0,Absolute level,0.1641,2.5727,103.0,0.1282
+noise x0.5,R1,Single-session velocity,0.9641,63.4427,11.0,0.2205
+noise x0.5,R2,Two-consecutive velocity,0.8103,19.4496,34.0,0.3333
+noise x0.5,R3,CUSUM,0.7949,18.0861,36.0,0.4821
+noise x1.5,R0,Absolute level,0.1795,3.5516,91.0,0.1179
+noise x1.5,R1,Single-session velocity,0.9846,69.3843,10.5,0.0923
+noise x1.5,R2,Two-consecutive velocity,0.7897,20.8204,38.0,0.2256
+noise x1.5,R3,CUSUM,0.7538,22.3903,41.0,0.2513
+no shared day effect,R0,Absolute level,0.1641,3.0694,91.0,0.1231
+no shared day effect,R1,Single-session velocity,0.9692,68.12,12.0,0.1128
+no shared day effect,R2,Two-consecutive velocity,0.7692,18.4422,40.0,0.2923
+no shared day effect,R3,CUSUM,0.8,19.1128,40.0,0.3897
+shared day effect x2,R0,Absolute level,0.1846,3.2593,88.0,0.1128
+shared day effect x2,R1,Single-session velocity,0.9744,66.8034,10.0,0.1333
+shared day effect x2,R2,Two-consecutive velocity,0.8359,22.225,31.5,0.2462
+shared day effect x2,R3,CUSUM,0.8051,22.841,34.0,0.3282
+declines half as fast,R0,Absolute level,0.1231,3.0894,85.0,0.0718
+declines half as fast,R1,Single-session velocity,0.959,67.7868,10.0,0.0821
+declines half as fast,R2,Two-consecutive velocity,0.7538,19.5663,41.0,0.1641
+declines half as fast,R3,CUSUM,0.7026,21.1882,45.0,0.2103
+declines twice as fast,R0,Absolute level,0.2564,3.0894,95.0,0.1897
+declines twice as fast,R1,Single-session velocity,0.9897,67.7868,9.0,0.1795
+declines twice as fast,R2,Two-consecutive velocity,0.8667,19.5663,29.0,0.4256
+declines twice as fast,R3,CUSUM,0.8564,21.1882,33.0,0.5385
+about one session a day,R0,Absolute level,0.1333,2.7483,112.5,0.1231
+about one session a day,R1,Single-session velocity,0.9333,54.2732,14.0,0.1949
+about one session a day,R2,Two-consecutive velocity,0.7436,13.7673,49.0,0.2872
+about one session a day,R3,CUSUM,0.7641,14.5636,48.5,0.3641
+up to three a day,R0,Absolute level,0.1692,2.946,107.0,0.1231
+up to three a day,R1,Single-session velocity,0.9897,78.5167,6.0,0.1128
+up to three a day,R2,Two-consecutive velocity,0.9179,31.5348,23.0,0.1128
+up to three a day,R3,CUSUM,0.9333,30.3051,22.0,0.3436
+fewer days played,R0,Absolute level,0.1701,2.9703,104.0,0.1031
+fewer days played,R1,Single-session velocity,0.9021,57.655,14.0,0.0773
+fewer days played,R2,Two-consecutive velocity,0.6443,15.3594,52.0,0.2113
+fewer days played,R3,CUSUM,0.6804,16.8827,53.0,0.3093
+no practice effect,R0,Absolute level,0.2615,5.1229,70.0,0.1333
+no practice effect,R1,Single-session velocity,0.9846,71.6178,8.0,0.1641
+no practice effect,R2,Two-consecutive velocity,0.8513,24.1472,32.0,0.3026
+no practice effect,R3,CUSUM,0.8769,25.2284,30.0,0.3692
+double practice effect,R0,Absolute level,0.0974,1.3068,108.0,0.1077
+double practice effect,R1,Single-session velocity,0.9436,62.2929,12.0,0.1385
+double practice effect,R2,Two-consecutive velocity,0.7333,16.4509,41.0,0.3282
+double practice effect,R3,CUSUM,0.7333,17.5527,43.0,0.3333
+games equally hard,R0,Absolute level,0.1795,3.3499,90.0,0.1179
+games equally hard,R1,Single-session velocity,0.9744,68.3129,10.0,0.1179
+games equally hard,R2,Two-consecutive velocity,0.8205,19.5069,34.0,0.2769
+games equally hard,R3,CUSUM,0.7692,21.4138,39.5,0.3487
+games very unequal,R0,Absolute level,0.1692,3.3476,91.0,0.1077
+games very unequal,R1,Single-session velocity,0.9744,67.6982,11.0,0.1231
+games very unequal,R2,Two-consecutive velocity,0.8103,20.3172,36.0,0.241
+games very unequal,R3,CUSUM,0.7846,20.5489,39.0,0.3487

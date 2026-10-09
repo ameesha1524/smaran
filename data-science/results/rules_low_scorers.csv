@@ -1,0 +1,13 @@
+rule,name,stable_patients_scoring,patients,mean_base_level,false_alarms_per_patient_year,lo,hi
+R0,Absolute level,lowest third,26,40.4975,17.5001,11.9099,23.3902
+R0,Absolute level,middle third,27,57.6333,0.2618,0.0375,0.5597
+R0,Absolute level,highest third,27,71.7482,0.0,0.0,0.0
+R1,Single-session velocity,lowest third,26,40.4975,71.0274,62.2229,78.9549
+R1,Single-session velocity,middle third,27,57.6333,73.0425,65.9839,79.395
+R1,Single-session velocity,highest third,27,71.7482,67.6814,57.9922,75.4299
+R2,Two-consecutive velocity,lowest third,26,40.4975,23.3861,18.8153,27.7761
+R2,Two-consecutive velocity,middle third,27,57.6333,23.3003,18.8339,28.0791
+R2,Two-consecutive velocity,highest third,27,71.7482,19.9644,16.4502,23.0198
+R3,CUSUM,lowest third,26,40.4975,23.5441,19.3957,27.4964
+R3,CUSUM,middle third,27,57.6333,22.5149,19.0715,26.3734
+R3,CUSUM,highest third,27,71.7482,21.4272,17.532,24.7405

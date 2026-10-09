@@ -8,8 +8,13 @@
 #   make dev-backend-nodocker   the same with no Docker: embedded PostgreSQL
 #   make dev-frontend   PWA on :5173
 #   make golden         regenerate golden-vectors.json after a scoring change
+#   make ds             the data-science layer: tests, then every table and figure
+#   make ds-small       the same on the small cohort CI uses (about two minutes)
+#   make ds-export      load the fixture cohort through the backend, export it, run the
+#                       evaluation on what the API exported (needs the backend's tests)
+#   make ds-fixture     rewrite the committed test cohort and the shared vectors
 #
-# `demo`, `ds` and `e2e` are declared here so the names are stable, and fail
+# `demo` and `e2e` are declared here so the names are stable, and fail
 # loudly until the phase that builds them lands. See docs/PLAN.md.
 #
 # On Windows without make, run the commands under each target by hand, or
@@ -20,7 +25,10 @@ NPM ?= npm
 
 .PHONY: baseline test verify frontend-install frontend-check frontend-test frontend-build
 .PHONY: backend-test backend-verify db dev-backend dev-backend-nodocker dev-frontend golden
-.PHONY: demo ds e2e
+.PHONY: demo ds ds-small ds-test ds-export ds-fixture e2e
+
+PYTHON ?= python
+DS = data-science
 
 baseline: frontend-install frontend-check frontend-build backend-test
 
@@ -66,8 +74,24 @@ dev-frontend:
 demo:
 	@echo "make demo is not built yet: it needs the synthetic cohort and the full stack (Phases 5, 6)." && exit 1
 
-ds:
-	@echo "make ds is not built yet: data-science/ arrives in Phase 5." && exit 1
+# Needs: pip install -r data-science/requirements.txt. Fixed seeds; results/ is rewritten.
+ds-test:
+	cd $(DS) && $(PYTHON) -m pytest -q
+
+ds: ds-test
+	cd $(DS) && PYTHONPATH=src $(PYTHON) src/run_all.py
+
+ds-small:
+	cd $(DS) && SMARAN_DS_SMALL=1 SMARAN_DS_BOOT=100 SMARAN_DS_RESULTS=out/small-results PYTHONPATH=src $(PYTHON) src/run_all.py
+
+# The backend's CohortExportIT writes backend/target/export-sessions.csv; the Python side reads it.
+ds-export:
+	cd backend && $(MVN) -B verify -Dit.test=CohortExportIT -Dtest=NONE -Dsurefire.failIfNoSpecifiedTests=false
+	cd $(DS) && PYTHONPATH=src $(PYTHON) src/run_on_export.py --csv ../backend/target/export-sessions.csv --hash-map ../backend/target/export-hash-map.json --cohort ../backend/src/test/resources/cohort
+
+ds-fixture:
+	cd $(DS) && PYTHONPATH=src $(PYTHON) src/simulate.py --fixture --out ../backend/src/test/resources/cohort
+	$(PYTHON) scripts/make_sundowning_vectors.py
 
 e2e:
 	@echo "make e2e is not built yet: the Playwright suite arrives in Phase 7." && exit 1

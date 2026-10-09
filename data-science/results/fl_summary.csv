@@ -1,0 +1,7 @@
+method,auc,log_loss,bytes_on_the_wire,note,new_patient_auc,new_patient_log_loss
+predict the base rate for everyone,0.5,0.3398,0,the test abandonment rate is 0.107,,
+local only,0.7769,0.2868,0,no data leaves; cannot serve a new patient,,
+centralised,0.7026,0.3242,1787725,every training row uploaded once (estimated),0.6967,0.3132
+FedAvg (all clients),0.6919,0.3285,2677560,"60 rounds, update plus model download",0.6886,0.3163
+FedAvg (25% per round),0.6921,0.3284,676976,"60 rounds, update plus model download",0.6889,0.3162
+FedAvg + local tuning,0.7788,0.2867,2677560,"5 extra local rounds, no extra traffic",,

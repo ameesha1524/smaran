@@ -3,7 +3,7 @@
 Read this at the start of every session, after `docs/MASTER_PROMPT.md`.
 All patient data in this repository is synthetic or demo data.
 
-Last updated: 2026-10-09 (end of Phase 4).
+Last updated: 2026-10-09 (end of Phase 5).
 
 ## Phase status
 
@@ -13,19 +13,23 @@ Last updated: 2026-10-09 (end of Phase 4).
 | 1. Foundation: database, contracts, scoring | **P0 and P1 done** | `phase-1-foundation` | PR #2 merged into `phase-0-recon` by mistake; PR #3 carries it to `master` |
 | 2. Authentication and RBAC | **P0 and P1 done** | `phase-2-auth` | PR #4 merged into `master` |
 | 3. Device pairing | **P0 and P1 done** | `phase-3-pairing` | PR #5 merged into `master` |
-| 4. Games to dashboards | **P0 done; P1 items 8, 11, 12, 13 done; 9 and 10 (upload) not** | `phase-4-games` | Verified; see "Phase 4" below |
-| 5. Data science | Not started | | |
+| 4. Games to dashboards | **P0 done; P1 items 8, 11, 12, 13 done; 9 and 10 (upload) not** | `phase-4-games` | PR #6 merged into `master` |
+| 5. Data science | **P0 and P1 done; P2: clustering done, sentiment correlation not** | `phase-5-data-science` | Verified; see "Phase 5" below |
 | 6. DevOps | Not started | | |
 | 7. Hardening and showcase | Not started | | |
 
-**Next:** Phase 5 (data science).
+**Next:** Phase 6 (DevOps).
 
 ## Needs the human
 
 | # | What | Why | Until then |
 |---|---|---|---|
 | H1 | ~~Install Docker Desktop~~ | Done 2026-10-06 | none |
-| H2 | **Merge the Phase 4 PR** | Merging to `master` is the owner's call | Phase 5 builds on it |
+| H2 | **Merge the Phase 5 PR** | Merging to `master` is the owner's call | Phase 6 builds on it |
+| H9 | **Decide what the family is told, and how often.** As shipped, the default alert (a "watch" or worse, two sessions in a row) fires about 22 times per stable patient-year across six domains; a "decline"-only alert, about 4 | The evaluation (`data-science/results/SUMMARY.md`) measured it on a simulated cohort. Options: show the family only "decline"; require three in a row; cap alerts per patient per month. Each trades detection for quiet | Nothing was changed. The shipped behaviour stands |
+| H10 | **Decide the sundowning guard.** At six sittings per part and an effect size of 0.8, 58% of simulated patients with no late-day dip are flagged at least once in a year | At ten sittings and 1.2 it is 8.5%, and 65% of evaluations for a patient who does have a dip | Nothing was changed |
+| H11 | **Consent for research use.** The notice in this build does not mention research or export | The dataset export is for the operator's own evaluation. Before real data is exported for any study, the notice and an ethics approval must cover it | The export works on synthetic data only in practice |
+| H12 | Set `SMARAN_EXPORT_SALT` for any deployment that will use the export | It keys the hash that stands for a patient. It defaults to the signing secret; rotating that changes every hash | None needed for development |
 | H8 | Optional: set `ANTHROPIC_API_KEY` to try the journal reading | Without it a journal entry is not read and the dashboard's writing panel stays empty | Nothing else needs it |
 | H6 | ~~Pairing code format~~ | Decided 2026-10-07: 6 characters, 72 hours (the prompt's spec) | none |
 | H7 | Choose real `ADMIN_EMAIL` and `ADMIN_PASSWORD` for any deployment | The first administrator is created from these on first start; nothing in source can create one | Dev and demo use seeded demo accounts (see below); local runs set nothing |
@@ -80,6 +84,15 @@ Last updated: 2026-10-09 (end of Phase 4).
 | 2026-10-09 | The journal prompt and model are the server's; only signals are stored; the entry's text is stored nowhere | A client cannot steer the model; her words are not kept |
 | 2026-10-09 | Sundowning: effect size (Cohen's d, 0.8 to flag, 0.5 to end) of late afternoon against morning, per-game normalised, six sittings minimum in each part | Narrow, guarded, and not a diagnosis |
 | 2026-10-09 | A read is audited once a minute per person per patient | A dashboard is five requests; the list of who has looked was unreadable |
+| 2026-10-09 | The Python engine is a line-for-line port held to `golden-vectors.json` (16 cases, 1e-9), and the rules in the evaluation are checked to fire exactly where the engine's own `alert` does at the shipped thresholds | The evaluation measures the engine that ships, not one that resembles it |
+| 2026-10-09 | The evaluation's units: a pair is one patient and one domain; an episode is fires with gaps of at most 7 days; delay is days from the true onset to the first fire on or after it; sensitivity at W days counts only pairs followed for W days; false alarms are episodes in negative time, per patient-year with six domains | Stated once in `rules.py` so a number can be read the same way everywhere |
+| 2026-10-09 | The analyses are scripts, not notebooks | `make ds` has to reproduce every table and figure; a notebook cannot without extra machinery |
+| 2026-10-09 | Nothing in the engine, the alert rules or the sundowning detector was changed because of what the evaluation found; the findings are decisions H9 and H10 | They change what a family is told. That is the owner's call, and the golden vectors would move |
+| 2026-10-09 | The simulator sends scores and no trials, marks them `precomputedReading`, and the Rescorer skips any session with no recorded rounds (it stays `scoring_trust = device`) | A session with nothing to score from is not a disagreement. The client's flag does not decide this: a tablet could set it to dodge re-scoring, so it is the absence of trials that matters |
+| 2026-10-09 | The dataset export is one row per stored score; the patient is `HMAC-SHA256(salt, id)` truncated to 16 hex characters, time is days since her first session plus weekday and hour, there is no text, mood or device, only sessions with their own scores are included, and each export is audited with its counts | Keyed so it cannot be reversed or joined without the salt; no calendar dates, the easiest thing to link to a diary |
+| 2026-10-09 | The synthetic cohort is loaded through `SessionIngestionService` by `CohortImport` and never writes a profile, snapshot or alert itself; dates move by whole weeks so the last day is yesterday and every weekday is kept; it refuses the prod profile | The demo shows what production code makes of the history. The server refuses sessions over 400 days old |
+| 2026-10-09 | A five-patient, 120-day fixture cohort is committed (`backend/src/test/resources/cohort`, 0.6 MB) and CI regenerates it and diffs | A test of ingestion and export needs a fixed cohort; a silent change to the simulator must show up |
+| 2026-10-09 | CI Python is 3.14, the version the pins were made with | A pin set only makes sense for the interpreter it was resolved on |
 | 2026-10-07 | D2 decided by the human: pairing codes are 6 characters, valid 72 hours | Follows the prompt. Weaker against guessing than 8 characters / 10 minutes, so Phase 3 keeps both rate limits and the hash-only storage |
 | 2026-10-06 | Phase 1 went ahead on defaults D1, D3, D4 after "go ahead with phase 1" | The human's instruction |
 | 2026-10-06 | Baseline for velocity is trailing: it excludes the score being judged | Otherwise a drop pulls its own baseline down and hides part of itself |
@@ -509,6 +522,84 @@ npm run build                                  → exit 0
 - P1 item 10's caregiver side: the upload screen for photographs, voices and hints outside development builds. The tablet fetches the files; nothing in a real deployment puts them there yet.
 - P2: the Koi inhibition version and the voice-trend alert.
 
+## Phase 5 — 2026-10-09
+
+Branch `phase-5-data-science`, from `master` after PR #6.
+
+### What was built
+
+**`data-science/`** (start with its `README.md`: what is simulated, every assumption with its reason, what the results do and do not show)
+
+- `scoring_core.py`: the engine in Python, held to `golden-vectors.json`.
+- `simulate.py`, `params.py`: a cohort with known ground truth. Latent ability per domain over time (stable, slow and fast decline, single-domain decline, improving), a saturating practice effect per game, a shared good-and-bad-day effect, game difficulty, per-game noise, missed days and runs of them, dropout, abandoned sessions (non-IID by patient), a late-day dip for a subgroup, and the onset day of every change. Writes the JSON the API ingests and a de-identified CSV. Seeded per patient, so patient 7 is the same patient at any cohort size. Every parameter is listed with its reason in the README, generated from the code and tested.
+- `replay.py`, `rules.py`, `evaluate_rules.py`: Appendix C. Four rules (absolute level, single-session velocity, two-consecutive velocity, CUSUM), each with and without the confidence gate; detection delay, sensitivity within 14, 30, 60 and 90 days, false alarms per patient-year, points lost at detection, ROC and PR over threshold sweeps, matched-false-alarm comparisons, bootstrap intervals (patient level, 1000 resamples, fixed seed).
+- `ablations.py` (gate, EMA alpha, prior SD, SD floor, baseline window, sessions she left), `sensitivity.py` (13 changes to the assumptions), `reliability.py` (ICC), `practice.py` (mixed-effects model with statsmodels), `sundowning.py` (the detector against ground truth, with a power curve), `federated_sim.py` (local-only, centralised, FedAvg and FedAvg with tuning, convergence, communication cost, what one update leaks), `clustering.py` (PCA and k-means).
+- `run_all.py` writes every table to `results/*.csv`, every figure to `results/figures/*.png` with a JSON sidecar of its seed and parameters, `SUMMARY.md` and `run_info.json`. `make ds` runs the tests and then this; `make ds-small` is the version CI runs.
+- `run_on_export.py`: the evaluation code on the CSV the API exported.
+
+**Backend**
+
+- `GET /api/admin/export/sessions.csv` (ADMIN only; one row per stored score; patient as a keyed hash; days not dates; no text; audited with its counts). `ExportService`.
+- `CohortImport` and `CohortLoader`: load a simulated cohort through the real ingestion service (`--smaran.seed.cohort=file:...`, not with the prod profile).
+- `Rescorer` no longer counts a session with no recorded rounds as a disagreement (two new tests in `IngestionIT`, one of them showing a tablet cannot dodge re-scoring by calling its scores precomputed).
+- `SundowningDetectorTest.sharedVectors` and `sundowning-vectors.json`: the Java detector and the Python port held to one file.
+- `CohortExportIT` (7 tests); one new row in `AuthorizationMatrixIT`.
+
+**CI**: a `datascience` job (pytest, the committed fixture is what the simulator writes, a small-N run of the simulation and every analysis), and, in the backend job, the Python evaluation run on what the export returned.
+
+### Commands and results
+
+```
+cd data-science
+python -m pytest -q                      → 83 passed
+   golden parity 21 (16 cases + contract), sundowning vectors 21, rules and metrics 12,
+   simulator and ground truth 13, reliability 5, pipeline 11 (including a world with no noise)
+PYTHONPATH=src python src/run_all.py     → every table and figure (about ten minutes)
+
+cd backend
+mvn -o verify -Dsmaran.build.dir=C:/Users/amees/smaran-build   → BUILD SUCCESS
+Unit tests: 102, 0 failures (SundowningDetectorTest 7, including the shared vectors)
+Integration tests (PostgreSQL 16, embedded process): 418, 0 failures
+   AuthorizationMatrixIT 313 (the export is one new row)   CohortExportIT 7 NEW
+   IngestionIT 23   JournalAndSundowningIT 10   PairingIT 23   AuthFlowIT 18   GrantsAndAuditIT 11
+   SchemaAndIngestionIT 11   DemoSeedIT 2
+
+PYTHONPATH=src python src/run_on_export.py --csv ... --hash-map ... --cohort ../backend/src/test/resources/cohort
+   → OK: 1188 exported rows reproduce the cohort exactly, and the evaluation gives identical results on both.
+```
+
+**The tests can fail.** The sample SD in the Python engine was changed from n - 1 to n: 7 golden cases failed. The floor on the sundowning spread was changed from 3 to 2: the shared-vector test failed. Both were restored. (This also found a flaw in my own test: it ran the vector generator and so rewrote the committed file when the code under test was broken. It now compares in memory and never writes.)
+
+**A loaded cohort on a live backend.** The fixture cohort was loaded at start-up through ingestion into a running dev backend (579 sessions in about 50 seconds) and read back through the caregiver dashboard: the fast decline had an open `DOMAIN_DECLINE` alert on language, the slow decline one on time, and the stable patients none. Not a browser check: the dashboard code did not change in this phase.
+
+### What the evaluation found
+
+All of this is conditional on the simulation's assumptions; `data-science/README.md` lists the assumptions, and what the results do not show.
+
+1. **The absolute-level rule cries wolf on stable people who score low** (17.5 false alarms per patient-year for the lowest third by usual level, 0.3 for the middle, none for the highest), and the velocity rules do not depend on level (23.4, 23.3, 20.0). It is also the least sensitive (20% of declines within 90 days).
+2. **The rules as shipped raise many false alarms:** about 22 per stable patient-year for the default rule, 4 if only a "decline" alert counts, 71 for the single-session rule. This grows with how often she plays (14 at one session a day, 31 at up to three). Decision H9.
+3. **At the same false-alarm budget CUSUM is best**, clearly at a low budget (26% within 90 days against 7 to 9% at one false alarm a year), and the order held in all 14 sensitivity runs.
+4. **The confidence gate silences the first weeks and does nothing else; alpha moves only the displayed level and the absolute-level rule; the prior SD and the SD floor barely matter; a shorter baseline window finds more and cries wolf more.**
+5. **Practice effects hide a decline that begins while she is still learning:** a true fall of 1.68 points a month looks like -0.14 with practice ignored and -1.49 with it modelled. Modelling it raises detection and false alarms together.
+6. **Reliability:** one session against the next, ICC 0.67; the mean of seven sessions, 0.95; the engine's level, 0.97.
+7. **Sundowning:** the effect size separates dippers from the rest (AUC 0.98), but weekly evaluation flags 58% of simulated patients with no dip at least once in a year. Decision H10.
+8. **Federated learning:** FedAvg matches centralised (AUC 0.69 against 0.70) and both lose to a model each patient trains on her own history (0.78); federation costs more bytes than uploading the rows at this size; one update reveals a patient's abandonment rate (r = 0.98). Secure aggregation is not implemented.
+
+### Done-when, checked
+
+| Criterion | Result |
+|---|---|
+| `make ds` reproduces every table and figure | Yes (`run_all.py`; `make` is not installed on this machine, so the Python commands were run directly; the Makefile targets are the same commands) |
+| The README states limits plainly | Yes |
+| A CI job runs a small-N version of the simulation and the golden-vector tests | Yes: the `datascience` job, green on PR #7 (Python 3.14 on Linux; pytest, the fixture diff, the small-N run). The backend job also runs the Python evaluation on the export, green |
+| The cohort loads through the real ingestion service; the export is admin-only and de-identified; the evaluation runs on exported data | Yes (`CohortExportIT`, `run_on_export.py`) |
+
+### Not done in Phase 5
+
+- P2: journal sentiment against performance. On mock sentiment it would only recover whatever correlation was put in.
+- UMAP (PCA only).
+- The simulator does not model sub-signals or raw trials, or people who decline playing less.
+
 ## Known issues
 
 Found during recon. Each is scheduled in `docs/PLAN.md`.
@@ -583,6 +674,22 @@ Found during recon. Each is scheduled in `docs/PLAN.md`.
 49. **The reactive-ease stream still cannot authenticate** (an `EventSource`); its endpoints now sit on `/api/device` and the tablet does not yet read them with `fetch`. (Issue 33.)
 50. **Sessions queued by a version before this phase are dropped on the next sync.**
 51. **The family media path on the tablet was not exercised by the browser test:** no photograph or voice was uploaded through a screen.
+
+## Found in Phase 5
+
+52. **The shipped alert fires often.** Under the simulation's assumptions about 22 false alarms per stable patient-year for "watch or worse" (two in a row), 4 for "decline" only, 71 for a single session. `AlertService` opens an alert for "watch" as well as "decline", so a family would see them. Unchanged; decision H9.
+53. **The shipped sundowning guard flags many people with no dip, over a year** (58% at least once). Unchanged; decision H10.
+54. **Every result is conditional on assumed parameters.** No parameter is estimated from patients; the bootstrap intervals describe sampling, not the assumptions. Thirteen one-at-a-time changes are in `sensitivity.csv`.
+55. **The alert rules look at confidence only through the gate and alpha.** A session she leaves part-way counts at full weight toward an alert (only the displayed level is damped). Dropping such sessions changes little; filtering on confidence trades alarms for sensitivity. Not changed.
+56. **Federated learning does not federate yet.** The label differs from the simulation's; the tablet encrypts its update with a key only it has, so the server cannot average it; there is no secure aggregation, and in the simulation one update reveals a patient's abandonment rate (r = 0.98).
+57. **The export is de-identified, not anonymous, and the consent notice does not cover research use** (H11). The whole file is built in memory, which suits a pilot and not a large deployment. The weekday is taken from the UTC date of the session.
+58. **Simulated sessions carry scores and no trials,** so the server cannot re-score them and they stay `scoring_trust = device`.
+59. **Loading the cohort takes about 85 ms a session** through ingestion (579 sessions in about 50 seconds). The 200-patient cohort would take over an hour; the loader takes a few patients of each trajectory (`--smaran.seed.per-trajectory`, default 2).
+60. **A loaded cohort shows an open "missed days" alert on every patient,** because dates move by whole weeks and the cohort's last day can be up to six days ago. Cosmetic.
+61. **The pins and the CI job use Python 3.14,** the version the results were produced with. Checked: `actions/setup-python` and every pinned wheel resolve on the Linux runner (3.14.8).
+62. **The CI step that diffs the committed fixture against a fresh one assumes NumPy gives the same stream on Linux and Windows.** Verified: every file but one came out byte-identical on Linux and Windows. (Found by the first CI run: a gzip file's bytes differ between platforms and carry a timestamp, so the fixture's curves are plain CSV now; every file is written with LF endings. Everything else the simulator wrote was byte-identical between Windows and Linux, which is the answer to the NumPy question.)
+63. **Results are the same up to floating-point noise in the last digits, and the figures are not byte-identical between machines.**
+64. **`make` is not installed on this machine** (H3), so `make ds` was never run as such; its two lines were.
 
 ## Files left untracked on purpose
 

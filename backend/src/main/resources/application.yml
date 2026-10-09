@@ -86,6 +86,12 @@ smaran:
     # which production already must set; set this to keep the two apart.
     # pepper:
 
+  export:
+    # Keys the hash that stands in for a patient id in the dataset export (GET /api/admin/export/sessions.csv).
+    # Defaults to the signing secret; set it to keep the two apart. Changing it changes every hash, so a
+    # dataset exported before the change can no longer be joined to one exported after.
+    # salt:
+
   journal:
     # The model that reads a journal entry for how it feels, called from the server. With no
     # key nothing is read, and the entry simply saves on her tablet.

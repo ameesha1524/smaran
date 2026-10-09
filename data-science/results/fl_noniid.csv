@@ -1,0 +1,2 @@
+clients,abandon_rate_mean,abandon_rate_sd_between_patients,abandon_rate_min,abandon_rate_max,tap_latency_mean_sd_between_patients,train_rows_total,train_rows_per_client_median
+159,0.0978,0.0896,0.0,0.5304,0.1181,43316,296.0

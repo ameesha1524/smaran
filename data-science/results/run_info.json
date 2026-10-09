@@ -1,0 +1,30 @@
+{
+  "seed": 20261009,
+  "n_patients": 200,
+  "days": 365,
+  "bootstrap_resamples": 1000,
+  "python": "3.14.3",
+  "numpy": "2.4.2",
+  "pandas": "3.0.1",
+  "scipy": "1.17.1",
+  "scikit-learn": "1.8.0",
+  "matplotlib": "3.10.8",
+  "statsmodels": "0.15.0",
+  "seconds": {
+    "alert-rule comparison": 100.7,
+    "ablations": 208.4,
+    "reliability": 30.6,
+    "practice effects": 47.4,
+    "sensitivity to the assumptions": 138.2,
+    "sundowning": 15.3,
+    "clustering": 3.8,
+    "federated learning": 13.1
+  },
+  "total_seconds": 574.3,
+  "rule_names": {
+    "R0": "Absolute level",
+    "R1": "Single-session velocity",
+    "R2": "Two-consecutive velocity",
+    "R3": "CUSUM"
+  }
+}

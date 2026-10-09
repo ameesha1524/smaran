@@ -1,0 +1,17 @@
+{
+  "seed": 20261009,
+  "n_patients": 200,
+  "days": 365,
+  "bootstrap_resamples": 1000,
+  "windows": [
+    [
+      90,
+      120
+    ],
+    [
+      120,
+      150
+    ]
+  ],
+  "k_average": 7
+}

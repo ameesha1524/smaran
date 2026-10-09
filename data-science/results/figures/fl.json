@@ -1,0 +1,10 @@
+{
+  "seed": 20261009,
+  "n_patients": 200,
+  "days": 365,
+  "bootstrap_resamples": 1000,
+  "rounds": 60,
+  "epochs": 24,
+  "lr": 0.28,
+  "l2": 0.01
+}

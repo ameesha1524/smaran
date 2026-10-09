@@ -1,0 +1,6 @@
+patient_idx,patient_id,trajectory,sundowner,sundown_points,dropout_day,level_mean
+0,sim-0001,improving,False,0.0,,81.71975943963506
+1,sim-0002,fast_decline,True,11.79723914195247,,41.892427342314164
+2,sim-0003,single_domain,False,0.0,,51.04990717984984
+3,sim-0004,stable,False,0.0,,40.75037788178178
+4,sim-0005,slow_decline,False,0.0,,34.465931362758056

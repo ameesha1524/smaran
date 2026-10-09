@@ -1,0 +1,4 @@
+model,points_per_day,lo,hi,points_per_30_days
+true ability (simulation),-0.056,-0.0563,-0.0557,-1.68
+"scores, practice ignored",-0.0047,-0.0083,-0.0012,-0.1417
+"scores, practice modelled",-0.0495,-0.0557,-0.0434,-1.4859

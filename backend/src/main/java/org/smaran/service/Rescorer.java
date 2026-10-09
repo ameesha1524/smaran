@@ -79,7 +79,9 @@ public class Rescorer {
         return switch (session.getGameId()) {
             case "duck-roll-call" -> {
                 List<Object> trials = records.read(session.getTrials(), new TypeReference<List<Object>>() { }, null);
-                yield trials == null ? null : DuckRollCallScoring.score(trials);
+                // No rounds recorded means nothing to score from: the session stays `device`, and is not
+                // counted as a disagreement. (The data-science simulator sends scores without trials.)
+                yield trials == null || trials.isEmpty() ? null : DuckRollCallScoring.score(trials);
             }
             default -> null;
         };
