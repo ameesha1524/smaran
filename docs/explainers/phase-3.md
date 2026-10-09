@@ -44,7 +44,7 @@ answer, so a guess learns nothing about which it was.
 ## How to demo it in 60 seconds
 
 ```
-cd backend  && mvn verify          # includes PairingIT (22) and the matrix (337)
+cd backend  && mvn verify          # includes PairingIT (23) and the matrix (337)
 cd ../frontend && npm test         # 83 tests
 ```
 

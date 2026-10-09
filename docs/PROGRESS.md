@@ -374,10 +374,10 @@ cd backend
 mvn -o verify -Dsmaran.build.dir=C:/Users/amees/smaran-build   → BUILD SUCCESS
 
 Unit tests: 69, 0 failures   (PairingServiceTest is now 8 plain-function tests)
-Integration tests (PostgreSQL 16, embedded process): 401, 0 failures
+Integration tests (PostgreSQL 16, embedded process): 402, 0 failures
   AuthorizationMatrixIT  337   was 241: the tablet is now refused by every family endpoint,
                                and the new /api/device endpoints are checked as every caller
-  PairingIT               22   NEW
+  PairingIT               23   NEW
   AuthFlowIT              18
   GrantsAndAuditIT        11
   SchemaAndIngestionIT    11   expects migrations 1,2,3,4

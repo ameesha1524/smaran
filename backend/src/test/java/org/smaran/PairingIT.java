@@ -28,12 +28,16 @@ import org.junit.jupiter.api.Test;
 import org.smaran.config.JwtService;
 import org.smaran.domain.AppUser;
 import org.smaran.domain.Enums.Role;
+import org.smaran.domain.FamilyMember;
 import org.smaran.domain.Patient;
+import org.smaran.repo.FamilyMemberRepository;
 import org.smaran.service.DeviceService;
+import org.smaran.service.StorageService;
 import org.smaran.support.ApiTest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
@@ -49,6 +53,12 @@ class PairingIT extends ApiTest {
 
     @Autowired
     JwtService jwt;
+
+    @Autowired
+    StorageService storage;
+
+    @Autowired
+    FamilyMemberRepository familyMembers;
 
     /* ------------------------------------------------------------ helpers */
 
@@ -370,6 +380,34 @@ class PairingIT extends ApiTest {
 
     private int count(String table, String patientId) {
         return jdbc.queryForObject("select count(*) from " + table + " where patient_id = ?", Integer.class, patientId);
+    }
+
+    @Test
+    @DisplayName("a tablet is told where to fetch her family's photographs, and can fetch only hers")
+    void mediaIsHers() throws Exception {
+        Family a = family();
+        Family b = family();
+        String tokenA = pair(a);
+        String tokenB = pair(b);
+
+        String key = storage.store(new MockMultipartFile("photo", "face.jpg", "image/jpeg", "not really a jpeg".getBytes()),
+                a.patient().getId(), "face");
+        FamilyMember m = new FamilyMember();
+        m.setPatientId(a.patient().getId());
+        m.setName("Rupa");
+        m.setPhotoS3Key(key);
+        familyMembers.save(m);
+
+        JsonNode members = body(callFull(get("/api/device/family/members"), tokenA));
+        assertEquals("/api/device/media/" + key, members.get(0).get("photoUrl").asText(),
+                "the tablet is pointed at its own media path");
+
+        assertEquals(200, call(get("/api/device/media/" + key), tokenA));
+        assertEquals(404, call(get("/api/device/media/" + key), tokenB), "another family's tablet cannot fetch it");
+        assertEquals(404, call(get("/api/device/media/" + b.patient().getId() + "/nothing.jpg"), tokenA),
+                "nor can this one fetch a path under someone else's id");
+        assertEquals(403, call(get("/api/device/media/" + key), a.ownerToken()), "a person uses the person path");
+        assertEquals(401, call(get("/api/device/media/" + key), null));
     }
 
     @Test
