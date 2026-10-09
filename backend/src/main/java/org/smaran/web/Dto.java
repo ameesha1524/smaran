@@ -120,29 +120,6 @@ public final class Dto {
 
     /* --------------------------------------------------------- sessions */
 
-    public record ObjectResultDto(
-            String objectName,
-            SemanticCluster semanticCluster,
-            long tappedMs,
-            boolean wasCorrect) {
-    }
-
-    public record SessionSubmission(
-            String patientId,
-            GameType gameType,
-            Instant startedAt,
-            long durationMs,
-            double completionRate,
-            int difficultyTier,
-            double cognitiveLoadScore,
-            Mood moodAtStart,
-            List<ObjectResultDto> objectResults,
-            /** Optional. Absent → completion rate against the game's primary domain. */
-            Map<String, DomainReading> domainReadings,
-            /** Optional, opaque, caregiver-view only. */
-            Map<String, Object> metrics) {
-    }
-
     /* ----------------------------------------------------------- garden */
 
     public record GardenDto(
@@ -221,16 +198,6 @@ public final class Dto {
 
     /* ------------------------------------------------------------- sync */
 
-    public record SyncRequest(
-            String patientId,
-            List<SessionSubmission> sessions,
-            List<AcousticVectorDto> vectors,
-            List<WaterRequest> blooms) {
-    }
-
-    public record SyncResponse(int accepted, int duplicates, GardenDto garden) {
-    }
-
     /* --------------------------------------------------------------- FL */
 
     public record GradientUpload(String deviceId, String patientId, String modelVersion, String cipher) {
@@ -241,43 +208,108 @@ public final class Dto {
 
     /* -------------------------------------------------------- dashboard */
 
-    public record DashboardAlertDto(AlertLevel level, String code, String message) {
-    }
-
     public record MoodPoint(String date, Mood mood) {
-    }
-
-    public record DomainPoint(
-            String date,
-            double language,
-            double visualSemantic,
-            double motor,
-            double affective,
-            double temporal,
-            double executiveFunction) {
     }
 
     public record HeatPoint(String date, long minutes) {
     }
 
-    public record GamePerformance(GameType gameType, long sessions, double avgScore, String trend) {
-    }
-
     public record FamilyPhase(String id, String name, int phase) {
     }
 
-    public record DashboardSummary(
-            PatientDto patient,
+    /** One of her domains (or sub-signals) as the dashboard shows it. */
+    public record DomainCard(
+            String target,
+            String label,
+            double level,
+            String status,
+            double velocity,
+            double confidence,
+            int observations,
+            List<Double> spark) {
+    }
+
+    /** How many sittings began in this hour of this weekday (0 = Monday), over the last 90 days. Zero cells are left out. */
+    public record ActivityCell(int weekday, int hour, int sessions) {
+    }
+
+    public record MarkerView(Double workingMemorySpan, Double inhibitionBreakdownTier, Double trajectoryPrecisionMs) {
+    }
+
+    public record AlertView(
+            String id,
+            String kind,
+            String target,
+            String severity,
+            String message,
+            Instant openedAt,
+            Instant lastSeenAt,
+            Instant resolvedAt,
+            Instant acknowledgedAt) {
+    }
+
+    /** Titles and domains come from the registry, so a new game needs no dashboard change. */
+    public record GameInfo(String id, String title, List<String> primaryDomains, boolean retired) {
+    }
+
+    public record SessionPatient(String id, String name, String kinshipTerm, String languageCode) {
+    }
+
+    /**
+     * Everything the dashboard shows, in one read. For a doctor the same view is
+     * built without the family members: a clinician needs her trends, not the
+     * names of the people who visit.
+     */
+    public record DashboardView(
+            SessionPatient patient,
+            boolean doctorView,
             GardenDto garden,
-            long sessionsThisWeek,
+            long sessionsLast7Days,
             Instant lastActive,
+            List<DomainCard> domains,
+            List<DomainCard> subSignals,
+            MarkerView markers,
+            List<AlertView> alerts,
             List<MoodPoint> moodTrend,
-            List<DomainPoint> domainTrend,
             List<HeatPoint> heatmap,
-            List<GamePerformance> perGame,
+            List<TrendPoint> acousticTrend,
             List<FamilyPhase> familyPhases,
-            List<DashboardAlertDto> alerts,
-            List<TrendPoint> acousticTrend) {
+            List<ActivityCell> activity,
+            List<GameInfo> games) {
+    }
+
+    /** One point of a trend chart: her levels after a session. */
+    public record TimePoint(Instant at, Map<String, Double> levels, Map<String, String> statuses) {
+    }
+
+    /** One journal entry as signals: how warm (-1 to 1), how agitated (0 to 1), and any concern flags. */
+    public record SentimentPoint(Instant at, double valence, double arousal, List<String> concernFlags) {
+    }
+
+    public record ContributionView(String target, double raw, double confidence, String because) {
+    }
+
+    /** A session as a family member or doctor reads it: what it said, never the raw trials. */
+    public record SessionRow(
+            String id,
+            Instant startedAt,
+            String gameId,
+            String gameTitle,
+            long durationMs,
+            boolean completed,
+            boolean abandoned,
+            int difficultyTier,
+            String moodAtStart,
+            List<ContributionView> contributions,
+            String scoringTrust) {
+    }
+
+    /* ------------------------------------------------------------- sync */
+
+    public record Rejection(String clientSessionId, String reason) {
+    }
+
+    public record BatchResponse(int accepted, int duplicates, List<Rejection> rejected, GardenDto garden) {
     }
 
     /* -------------------------------------------------------- reminders */
@@ -333,7 +365,4 @@ public final class Dto {
     }
 
     /* -------------------------------------------------- mood check-in */
-
-    public record MoodCheckIn(String patientId, Mood mood, Integer localHour) {
-    }
 }

@@ -60,6 +60,19 @@ public class AuditService {
                 actor.name(), actorId, action, patientId, clip(resource, 200), clip(ip, 64), detailJson(detail));
     }
 
+    /**
+     * Has this person already been recorded doing this to this patient lately? A
+     * dashboard is five requests; recording each would bury the list of who has
+     * looked under copies of one visit.
+     */
+    public boolean recordedWithin(String actorId, String action, String patientId, java.time.Duration window) {
+        Integer n = jdbc.queryForObject(
+                "select count(*) from audit_event where actor_id = ? and action = ? and patient_id = ? "
+                        + "and at > now() - make_interval(secs => ?)",
+                Integer.class, actorId, action, patientId, window.toSeconds());
+        return n != null && n > 0;
+    }
+
     public List<Event> forPatient(String patientId, int limit) {
         return jdbc.query(
                 "select id, at, actor_type, actor_id, action, patient_id, resource, ip, detail::text "

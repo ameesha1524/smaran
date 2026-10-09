@@ -4,7 +4,6 @@ import { useSmaran } from '../state/SmaranContext'
 import { STAGE_W, useStageScale } from '../scenes/PixelPond'
 import type { LanguageCode, SessionResultDraft } from '../lib/types'
 import { cue } from '../lib/ambient'
-import { koiReadings } from '../lib/cognitiveMap'
 import './games.css'
 
 /**
@@ -451,29 +450,30 @@ export default function KoiAreJumping() {
     const completionRate = Number((tappedCount / rounds.length).toFixed(3))
     const cognitiveLoadScore = Number(((rounds.length - tappedCount) / rounds.length).toFixed(3))
 
+    // A full sitting is ROUND_LIMIT leaps; fewer means she left part-way.
+    const finishedSitting = rounds.length >= ROUND_LIMIT
+
     const draft: SessionResultDraft = {
       gameType: 'KOI_ARE_JUMPING',
       startedAt: sittingStartedAt.current,
       durationMs: Date.now() - sittingStartedAt.current,
       completionRate,
+      completed: finishedSitting,
+      abandoned: !finishedSitting,
       // The reference has no difficulty lever of its own — the leap timing
       // never changes — so there is nothing honest to report but one tier.
       difficultyTier: 1,
       cognitiveLoadScore,
       moodAtStart: moodToday ?? 'QUIET',
-      // Response rate and how early in each leap she answered — see koiReadings.
-      domainReadings: koiReadings(rounds),
-      metrics: {
-        rounds: rounds.map(({ creature, wasTapped, reactionMs, direction, radiusPx, leapMs }) => ({
-          creature,
-          wasTapped,
-          reactionMs,
-          direction,
-          radiusPx,
-          leapMs,
-        })),
-        sessionTimeOfDay: rounds[rounds.length - 1].sessionTimeOfDay,
-      },
+      // One trial per leap; the game's module (games/modules/koiAreJumping) turns them into scores.
+      trials: rounds.map(({ creature, wasTapped, reactionMs, direction, radiusPx, leapMs }) => ({
+        creature,
+        wasTapped,
+        reactionMs,
+        direction,
+        radiusPx,
+        leapMs,
+      })),
     }
     void completeSession(draft)
   }, [completeSession, moodToday])

@@ -1,35 +1,45 @@
 package org.smaran.service;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
-import java.util.Comparator;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+import org.smaran.domain.Alert;
 import org.smaran.domain.CognitiveProfile;
-import org.smaran.domain.Enums.AlertLevel;
-import org.smaran.domain.Enums.GameType;
 import org.smaran.domain.GameSession;
 import org.smaran.domain.GardenState;
 import org.smaran.domain.Patient;
+import org.smaran.domain.ProfileSnapshot;
 import org.smaran.repo.GameSessionRepository;
 import org.smaran.repo.MoodLogRepository;
 import org.smaran.repo.PatientRepository;
+import org.smaran.repo.ProfileSnapshotRepository;
+import org.smaran.scoring.Contract;
+import org.smaran.scoring.Contract.ScoreContribution;
+import org.smaran.scoring.Contract.TargetState;
+import org.smaran.scoring.GameRegistry;
 import org.smaran.web.Dto;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Everything the caregiver dashboard shows, assembled in one read.
+ * Everything the dashboards show, read from what ingestion stored.
  *
- * The alerts at the bottom are the reason this service exists. Each one is
- * phrased as an observation with its evidence attached, never as a conclusion,
- * because the person reading it is a daughter on a train and the next step is
- * always "mention this to the doctor", never "your mother has X".
+ * Nothing here scores anything. Levels, velocities and statuses come from the
+ * profile and its snapshots, sessions from the sessions table, alerts from the
+ * alerts table. So a dashboard shows exactly what the engine concluded, at the
+ * time it concluded it, and a doctor and a family member are looking at the
+ * same numbers.
+ *
+ * The doctor's view is the same view without the people around her.
  */
 @Service
 public class DashboardService {
@@ -37,73 +47,226 @@ public class DashboardService {
     private static final DateTimeFormatter DAY =
             DateTimeFormatter.ofPattern("yyyy-MM-dd").withZone(ZoneId.systemDefault());
 
+    private static final List<String> DOMAINS =
+            List.of("LANGUAGE", "VISUAL_SEMANTIC", "MOTOR", "AFFECTIVE", "TEMPORAL", "EXECUTIVE");
+
+    static final Map<String, String> LABEL = Map.ofEntries(
+            Map.entry("LANGUAGE", "Language"),
+            Map.entry("VISUAL_SEMANTIC", "Recognising pictures and faces"),
+            Map.entry("MOTOR", "Movement and tapping"),
+            Map.entry("AFFECTIVE", "Mood and feeling"),
+            Map.entry("TEMPORAL", "Order of the day"),
+            Map.entry("EXECUTIVE", "Planning and holding things in mind"),
+            Map.entry("WORKING_MEMORY_SPAN", "Holding a few things in mind"),
+            Map.entry("INHIBITORY_CONTROL", "Holding back a reaction"),
+            Map.entry("COGNITIVE_FLEXIBILITY", "Switching between things"),
+            Map.entry("TRAJECTORY_PREDICTION", "Following something that moves"),
+            Map.entry("REACTION_SPEED", "Reaction speed"),
+            Map.entry("SUSTAINED_ATTENTION", "Staying with a task"));
+
+    private static final TypeReference<Map<String, Double>> DOUBLES = new TypeReference<>() {
+    };
+    private static final TypeReference<Map<String, String>> STRINGS = new TypeReference<>() {
+    };
+    private static final TypeReference<Contract.SessionMarkers> MARKERS = new TypeReference<>() {
+    };
+
     private final PatientRepository patients;
     private final GameSessionRepository sessions;
     private final MoodLogRepository moods;
+    private final ProfileSnapshotRepository snapshots;
     private final CognitiveProfileService profiles;
     private final GardenStateService gardens;
     private final FamilyGroveAdaptationService grove;
     private final AudioBiomarkerService biomarkers;
+    private final AlertService alerts;
+    private final GameRegistry registry;
+    private final SessionRecords records;
+    private final org.springframework.jdbc.core.JdbcTemplate jdbc;
 
     public DashboardService(
             PatientRepository patients,
             GameSessionRepository sessions,
             MoodLogRepository moods,
+            ProfileSnapshotRepository snapshots,
             CognitiveProfileService profiles,
             GardenStateService gardens,
             FamilyGroveAdaptationService grove,
-            AudioBiomarkerService biomarkers) {
+            AudioBiomarkerService biomarkers,
+            AlertService alerts,
+            GameRegistry registry,
+            SessionRecords records,
+            org.springframework.jdbc.core.JdbcTemplate jdbc) {
         this.patients = patients;
         this.sessions = sessions;
         this.moods = moods;
+        this.snapshots = snapshots;
         this.profiles = profiles;
         this.gardens = gardens;
         this.grove = grove;
         this.biomarkers = biomarkers;
+        this.alerts = alerts;
+        this.registry = registry;
+        this.records = records;
+        this.jdbc = jdbc;
     }
 
+    /** @param doctor true for a doctor: the same view, without the family around her */
     @Transactional(readOnly = true)
-    public Dto.DashboardSummary summary(String patientId) {
+    public Dto.DashboardView view(String patientId, boolean doctor) {
         Patient patient = patients.findById(patientId).orElseThrow();
         CognitiveProfile profile = profiles.forPatient(patientId);
         GardenState garden = gardens.forPatient(patientId);
+        Map<String, TargetState> state = profiles.scoringState(profile);
+
+        ProfileSnapshot latest = snapshots.findTopByPatientIdOrderByAtDesc(patientId).orElse(null);
+        Map<String, Double> velocities = latest == null ? Map.of() : records.read(latest.getVelocities(), DOUBLES, Map.of());
+        Map<String, String> statuses = latest == null ? Map.of() : records.read(latest.getStatuses(), STRINGS, Map.of());
+
+        // The last fourteen snapshots, oldest first, are the sparklines.
+        List<ProfileSnapshot> recent = new ArrayList<>(snapshots.findTop14ByPatientIdOrderByAtDesc(patientId));
+        Collections.reverse(recent);
+        List<Map<String, Double>> recentLevels = recent.stream()
+                .map(s -> records.read(s.getLevels(), DOUBLES, Map.<String, Double>of()))
+                .toList();
+
+        List<Dto.DomainCard> domains = new ArrayList<>();
+        for (String d : DOMAINS) {
+            domains.add(card(d, state.get(d), velocities, statuses, recentLevels));
+        }
+        List<Dto.DomainCard> subs = new ArrayList<>();
+        state.forEach((target, t) -> {
+            if (!DOMAINS.contains(target) && t.observations() > 0) {
+                subs.add(card(target, t, velocities, statuses, recentLevels));
+            }
+        });
+
+        Dto.MarkerView markers = null;
+        if (latest != null && latest.getMarkers() != null) {
+            Contract.SessionMarkers m = records.read(latest.getMarkers(), MARKERS, null);
+            if (m != null) {
+                markers = new Dto.MarkerView(m.workingMemorySpan(), m.inhibitionBreakdownTier(), m.trajectoryPrecisionMs());
+            }
+        }
 
         Instant monthAgo = Instant.now().minus(Duration.ofDays(30));
         List<GameSession> month = sessions.findByPatientIdAndStartedAtAfterOrderByStartedAtAsc(patientId, monthAgo);
-
         Dto.TrendResult voice = biomarkers.computeTrend(patientId);
+        Instant lastActive = sessions.findTopByPatientIdOrderByStartedAtDesc(patientId)
+                .map(GameSession::getStartedAt)
+                .orElse(null);
 
-        return new Dto.DashboardSummary(
-                toPatientDto(patient, profile),
+        return new Dto.DashboardView(
+                new Dto.SessionPatient(patient.getId(), patient.getName(), patient.getKinshipTerm(), patient.getLanguageCode()),
+                doctor,
                 toGardenDto(garden),
                 sessions.countByPatientIdAndStartedAtAfter(patientId, Instant.now().minus(Duration.ofDays(7))),
-                month.isEmpty() ? garden.getLastActivity() : month.get(month.size() - 1).getStartedAt(),
+                lastActive,
+                domains,
+                subs,
+                markers,
+                alerts.forPatient(patientId, true).stream().map(DashboardService::alertView).toList(),
                 moodTrend(patientId),
-                domainTrend(month),
                 heatmap(month),
-                perGame(month),
-                grove.forPatient(patientId).stream()
+                voice.points(),
+                doctor ? List.of() : grove.forPatient(patientId).stream()
                         .map(m -> new Dto.FamilyPhase(m.getId(), m.getName(), m.getCurrentPhase()))
                         .toList(),
-                alerts(patient, profile, garden, month, voice),
-                voice.points());
+                activity(patientId),
+                registry.all().stream()
+                        .map(g -> new Dto.GameInfo(g.id(), g.title(), g.primaryDomains(), g.retired()))
+                        .toList());
+    }
+
+    private Dto.DomainCard card(
+            String target,
+            TargetState t,
+            Map<String, Double> velocities,
+            Map<String, String> statuses,
+            List<Map<String, Double>> recentLevels) {
+        double level = t == null ? 50 : t.level();
+        int observations = t == null ? 0 : t.observations();
+        double confidence = Math.min(1, observations / 12.0);
+        List<Double> spark = recentLevels.stream()
+                .map(m -> m.get(target))
+                .filter(v -> v != null)
+                .map(DashboardService::round1)
+                .toList();
+        return new Dto.DomainCard(
+                target,
+                LABEL.getOrDefault(target, target),
+                round1(level),
+                statuses.getOrDefault(target, "stable"),
+                round2(velocities.getOrDefault(target, 0.0)),
+                round2(confidence),
+                observations,
+                spark);
+    }
+
+    /** Her journal entries as signals only. Neither the words nor the model's one-line gist leave the database. */
+    @Transactional(readOnly = true)
+    public List<Dto.SentimentPoint> sentiment(String patientId, int days) {
+        Instant since = Instant.now().minus(Duration.ofDays(Math.max(1, Math.min(days, 365))));
+        return jdbc.query(
+                "select at, valence, arousal, concern_flags::text as flags from journal_signal "
+                        + "where patient_id = ? and at > ? order by at",
+                (rs, n) -> new Dto.SentimentPoint(
+                        rs.getTimestamp("at").toInstant(), rs.getDouble("valence"), rs.getDouble("arousal"),
+                        records.read(rs.getString("flags"), new TypeReference<List<String>>() { }, List.<String>of())),
+                patientId, java.sql.Timestamp.from(since));
+    }
+
+    /** Her levels after each session in the last {@code days} days: the trend chart. */
+    @Transactional(readOnly = true)
+    public List<Dto.TimePoint> timeseries(String patientId, int days) {
+        Instant since = Instant.now().minus(Duration.ofDays(Math.max(1, Math.min(days, 365))));
+        return snapshots.findByPatientIdAndAtAfterOrderByAtAsc(patientId, since).stream()
+                .map(s -> new Dto.TimePoint(
+                        s.getAt(),
+                        records.read(s.getLevels(), DOUBLES, Map.of()),
+                        records.read(s.getStatuses(), STRINGS, Map.of())))
+                .toList();
+    }
+
+    /** The latest sessions with what each one said. Never the raw trials. */
+    @Transactional(readOnly = true)
+    public List<Dto.SessionRow> recentSessions(String patientId, int limit) {
+        return sessions.findByPatientIdOrderByStartedAtDesc(patientId, PageRequest.of(0, Math.max(1, Math.min(limit, 100))))
+                .stream()
+                .map(this::row)
+                .toList();
+    }
+
+    private Dto.SessionRow row(GameSession s) {
+        String title = s.getGameId() == null
+                ? registry.of(s.getGameType()).map(GameRegistry.Entry::title).orElse(s.getGameType().name())
+                : registry.find(s.getGameId()).map(GameRegistry.Entry::title).orElse(s.getGameId());
+        List<ScoreContribution> cs = records.contributionsOf(s, profiles.legacyReadingsOf(s));
+        return new Dto.SessionRow(
+                s.getId(),
+                s.getStartedAt(),
+                s.getGameId() == null ? registry.of(s.getGameType()).map(GameRegistry.Entry::id).orElse(null) : s.getGameId(),
+                title,
+                s.getDurationMs(),
+                s.getCompleted() == null ? s.getCompletionRate() >= 0.95 : s.getCompleted(),
+                Boolean.TRUE.equals(s.getAbandoned()),
+                s.getDifficultyTier(),
+                s.getMoodAtStart() == null ? null : s.getMoodAtStart().name(),
+                cs.stream()
+                        .map(c -> new Dto.ContributionView(
+                                c.target(), round1(c.raw()), round2(c.confidence()),
+                                c.because() == null || c.because().isBlank() ? "From her completion of the session." : c.because()))
+                        .toList(),
+                s.getScoringTrust());
+    }
+
+    public static Dto.AlertView alertView(Alert a) {
+        return new Dto.AlertView(
+                a.getId(), a.getKind(), a.getTarget(), a.getSeverity(), a.getMessage(),
+                a.getOpenedAt(), a.getLastSeenAt(), a.getResolvedAt(), a.getAcknowledgedAt());
     }
 
     /* ------------------------------------------------------------ pieces */
-
-    private Dto.PatientDto toPatientDto(Patient p, CognitiveProfile profile) {
-        return new Dto.PatientDto(
-                p.getId(),
-                p.getName(),
-                p.getLanguageCode(),
-                p.getKinshipTerm(),
-                p.getRegion(),
-                p.getFaith(),
-                p.getPeakWindow(),
-                p.getProfileVersion(),
-                p.getCaregiverId(),
-                profiles.toDto(profile));
-    }
 
     public Dto.GardenDto toGardenDto(GardenState g) {
         return new Dto.GardenDto(
@@ -115,6 +278,25 @@ public class DashboardService {
                 g.getBloomCount());
     }
 
+    /**
+     * When she plays, by weekday and hour. The hour is the one on her own clock (the tablet sends it); the weekday
+     * is the server's reading of the start time, so a session near midnight can fall on the neighbouring day.
+     */
+    private List<Dto.ActivityCell> activity(String patientId) {
+        Map<Integer, Integer> cells = new TreeMap<>();
+        for (GameSession s : sessions.findByPatientIdAndStartedAtAfterOrderByStartedAtAsc(
+                patientId, Instant.now().minus(Duration.ofDays(90)))) {
+            if (s.getHourOfDay() == null) {
+                continue;
+            }
+            int weekday = s.getStartedAt().atZone(ZoneId.systemDefault()).getDayOfWeek().getValue() - 1;
+            cells.merge(weekday * 24 + s.getHourOfDay(), 1, Integer::sum);
+        }
+        return cells.entrySet().stream()
+                .map(e -> new Dto.ActivityCell(e.getKey() / 24, e.getKey() % 24, e.getValue()))
+                .toList();
+    }
+
     private List<Dto.MoodPoint> moodTrend(String patientId) {
         return moods.findByPatientIdAndAtAfterOrderByAtAsc(patientId, Instant.now().minus(Duration.ofDays(30)))
                 .stream()
@@ -122,161 +304,20 @@ public class DashboardService {
                 .toList();
     }
 
-    /**
-     * One point per day per domain, from the same readings the profile update
-     * used — so a Lotus Frog visit lands on four lines, not one. Within a day,
-     * readings are averaged weighted by confidence. Days with no reading for a
-     * domain inherit the previous value rather than dropping to zero — a rest
-     * day is not a decline, and a chart that says otherwise would be lying to a
-     * frightened relative.
-     */
-    private List<Dto.DomainPoint> domainTrend(List<GameSession> month) {
-        // day → domain → {Σ score·confidence, Σ confidence}
-        Map<String, Map<String, double[]>> byDay = new TreeMap<>();
-        for (GameSession s : month) {
-            Map<String, double[]> sums = byDay.computeIfAbsent(DAY.format(s.getStartedAt()), d -> new LinkedHashMap<>());
-            profiles.readingsOf(s).forEach((domain, r) -> {
-                double[] acc = sums.computeIfAbsent(domain, k -> new double[2]);
-                acc[0] += r.score() * r.confidence();
-                acc[1] += r.confidence();
-            });
-        }
-
-        List<Dto.DomainPoint> out = new ArrayList<>();
-        Map<String, Double> carry = new LinkedHashMap<>();
-        for (String d : CognitiveMap.DOMAINS) {
-            carry.put(d, CognitiveMap.NEUTRAL);
-        }
-
-        for (Map.Entry<String, Map<String, double[]>> day : byDay.entrySet()) {
-            day.getValue().forEach((domain, acc) -> {
-                if (acc[1] > 0) {
-                    carry.put(domain, round(acc[0] / acc[1]));
-                }
-            });
-            out.add(new Dto.DomainPoint(
-                    day.getKey(),
-                    carry.get("language"),
-                    carry.get("visualSemantic"),
-                    carry.get("motor"),
-                    carry.get("affective"),
-                    carry.get("temporal"),
-                    carry.get("executiveFunction")));
-        }
-        return out;
-    }
-
     private List<Dto.HeatPoint> heatmap(List<GameSession> month) {
         Map<String, Long> minutes = new TreeMap<>();
         for (GameSession s : month) {
             minutes.merge(DAY.format(s.getStartedAt()), Math.round(s.getDurationMs() / 60000d), Long::sum);
         }
-        return minutes.entrySet().stream().map(e -> new Dto.HeatPoint(e.getKey(), e.getValue())).toList();
+        Map<String, Long> ordered = new LinkedHashMap<>(minutes);
+        return ordered.entrySet().stream().map(e -> new Dto.HeatPoint(e.getKey(), e.getValue())).toList();
     }
 
-    private List<Dto.GamePerformance> perGame(List<GameSession> month) {
-        List<Dto.GamePerformance> out = new ArrayList<>();
-        for (GameType type : GameType.values()) {
-            List<GameSession> forType = month.stream().filter(s -> s.getGameType() == type).toList();
-            if (forType.isEmpty()) {
-                continue;
-            }
-            double avg = forType.stream().mapToDouble(GameSession::getCompletionRate).average().orElse(0);
-            String trend = "FLAT";
-            if (forType.size() >= 4) {
-                int half = forType.size() / 2;
-                double early = forType.subList(0, half).stream().mapToDouble(GameSession::getCompletionRate).average().orElse(0);
-                double late = forType.subList(half, forType.size()).stream().mapToDouble(GameSession::getCompletionRate).average().orElse(0);
-                if (late > early + 0.07) {
-                    trend = "UP";
-                } else if (late < early - 0.07) {
-                    trend = "DOWN";
-                }
-            }
-            out.add(new Dto.GamePerformance(type, forType.size(), round(avg), trend));
-        }
-        out.sort(Comparator.comparingLong(Dto.GamePerformance::sessions).reversed());
-        return out;
+    private static double round1(double v) {
+        return Math.round(v * 10d) / 10d;
     }
 
-    /* ------------------------------------------------------------ alerts */
-
-    private List<Dto.DashboardAlertDto> alerts(
-            Patient patient,
-            CognitiveProfile profile,
-            GardenState garden,
-            List<GameSession> month,
-            Dto.TrendResult voice) {
-
-        List<Dto.DashboardAlertDto> alerts = new ArrayList<>();
-
-        long missed = GardenStateService.daysSince(garden.getLastActivity());
-        if (missed >= 3) {
-            alerts.add(new Dto.DashboardAlertDto(
-                    AlertLevel.ORANGE,
-                    "MISSED_DAYS",
-                    "%s has not opened Smaran for %d days. Her garden is resting — nothing has been lost, but it may be worth a call."
-                            .formatted(patient.getName(), missed)));
-        }
-
-        // A cluster falling while its neighbours hold: domain-specific decline.
-        Map<String, Double> clusters = profiles.clusters(profile);
-        clusters.entrySet().stream()
-                .filter(e -> e.getValue() < 0.6)
-                .min(Map.Entry.comparingByValue())
-                .ifPresent(worst -> {
-                    double others = clusters.entrySet().stream()
-                            .filter(e -> !e.getKey().equals(worst.getKey()))
-                            .mapToDouble(Map.Entry::getValue)
-                            .average()
-                            .orElse(worst.getValue());
-                    if (others - worst.getValue() >= 0.2) {
-                        alerts.add(new Dto.DashboardAlertDto(
-                                AlertLevel.AMBER,
-                                "CLUSTER_DECLINE",
-                                ("Recognition of \"%s\" objects is at %d%% while other groups are around %d%%. "
-                                        + "A single group falling on its own usually points at a memory domain rather "
-                                        + "than at forgetting the culture — worth mentioning at the next appointment.")
-                                        .formatted(
-                                                worst.getKey().replace('_', ' ').toLowerCase(),
-                                                Math.round(worst.getValue() * 100),
-                                                Math.round(others * 100))));
-                    }
-                });
-
-        if (profile.isSundowningPattern()) {
-            alerts.add(new Dto.DashboardAlertDto(
-                    AlertLevel.YELLOW,
-                    "MOTOR_VARIANCE",
-                    "Late-afternoon mood has been consistently lower. Smaran has stopped suggesting games after 4 pm."));
-        }
-
-        if (voice.rising()) {
-            alerts.add(new Dto.DashboardAlertDto(
-                    AlertLevel.YELLOW,
-                    "VOICE_BIOMARKER",
-                    voice.message() + " This is a monitoring signal, not a diagnosis."));
-        }
-
-        // Language regression: she is answering in a language other than the one
-        // set for her, which can appear under cognitive stress.
-        boolean regression = month.stream().anyMatch(s -> s.getCognitiveLoadScore() > 0.85)
-                && !patient.getLanguageCode().equals("en")
-                && month.size() > 10;
-        if (regression) {
-            alerts.add(new Dto.DashboardAlertDto(
-                    AlertLevel.AMBER,
-                    "LANGUAGE_REGRESSION",
-                    "Several sessions this month ran at a high cognitive load. If she has been slipping into her "
-                            + "childhood language at those moments, note when it happens — it is useful for the doctor."));
-        }
-
-        return alerts;
-    }
-
-    /* ----------------------------------------------------------- helpers */
-
-    private static double round(double v) {
-        return Math.round(v * 1000d) / 1000d;
+    private static double round2(double v) {
+        return Math.round(v * 100d) / 100d;
     }
 }

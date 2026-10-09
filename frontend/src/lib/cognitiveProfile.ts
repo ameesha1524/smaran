@@ -26,13 +26,12 @@ import {
   LOW_EFFORT,
   ROUTE_GAMES,
   TIMING_GAMES,
-  readingsFor,
   weakestDomainFromHistory,
   type ReadingHistoryEntry,
 } from './cognitiveMap'
 import { applySession } from './scoring/engine'
-import { contributionsFromReadings, domainScoresFrom, stateFromDomainScores } from './scoring/legacy'
-import type { ScoringState } from './scoring/types'
+import { domainScoresFrom, stateFromDomainScores } from './scoring/legacy'
+import type { ScoreContribution, ScoringState } from './scoring/types'
 
 /* ----------------------------------------------------------- peak windows */
 
@@ -397,32 +396,25 @@ function startingPhaseFor(objectAccuracy: number): GrovePhase {
 }
 
 /**
- * Applied after every session — the loop that closes the profile.
+ * Applied after every session: fold its contributions into the profile.
  *
- * Every game goes through the same path: its readings (its own, or its
- * completion rate against its primary domain) become contributions, and the
- * scoring engine in lib/scoring folds them in. No game is special-cased here,
- * and `domainScores` is re-derived from the engine's levels each time.
+ * Every game goes through the same path. The game's module has already turned
+ * its trials into contributions (see lib/sessionPipeline.ts), and the scoring
+ * engine in lib/scoring folds them in. No game is special-cased here, and
+ * `domainScores` is re-derived from the engine's levels each time.
  */
-export function updateProfile(profile: CognitiveProfile, result: SessionResultDraft): CognitiveProfile {
-  const scoring = applySession(scoringStateOf(profile), contributionsFromReadings(readingsFor(result))).state
+export function updateProfile(
+  profile: CognitiveProfile,
+  result: Pick<SessionResultDraft, 'startedAt'>,
+  contributions: ScoreContribution[],
+): CognitiveProfile {
+  const scoring = applySession(scoringStateOf(profile), contributions).state
   const domainScores = domainScoresFrom(scoring, profile.domainScores)
-
-  // Copied, not mutated: the previous profile object may still be rendering.
-  const clusters = { ...profile.clusterAccuracy }
-  if (result.objectResults?.length) {
-    const fresh = clusterAccuracy(result.objectResults)
-    for (const [k, v] of Object.entries(fresh) as [SemanticCluster, number][]) {
-      const before = clusters[k] ?? v
-      clusters[k] = round(before * 0.7 + v * 0.3)
-    }
-  }
 
   return {
     ...profile,
     domainScores,
     scoring,
-    clusterAccuracy: clusters,
     derivedPeak: windowForHour(new Date(result.startedAt).getHours()),
     updatedAt: new Date().toISOString(),
   }

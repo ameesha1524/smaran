@@ -18,6 +18,8 @@ public final class Enums {
         MORNING_RITUALS,
         LOTUS_FROG,
         KOI_ARE_JUMPING,
+        /** Not a game: a journal entry read for how it feels, filed as a session so it flows through the same path. */
+        JOURNAL,
         /**
          * Retired from the device. Kept so that sessions already stored with it
          * still load and still count toward their domain's history; nothing

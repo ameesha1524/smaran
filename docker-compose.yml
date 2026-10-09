@@ -63,6 +63,8 @@ services:
       # Notifications degrade to log lines until these are filled in.
       SMARAN_FCM_KEY: ${SMARAN_FCM_KEY:-}
       SMARAN_TWILIO_SID: ${SMARAN_TWILIO_SID:-}
+      # Journal entries are read for how they feel by a model the server calls. No key: not read.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       SMARAN_TWILIO_TOKEN: ${SMARAN_TWILIO_TOKEN:-}
     ports:
       - "8080:8080"

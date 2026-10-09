@@ -48,7 +48,7 @@ public class MediaController {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND);
         }
 
-        guard.require(key.substring(0, Math.max(0, key.indexOf('/'))), Capability.PLAY);
+        guard.require(key.substring(0, Math.max(0, key.indexOf('/'))), Capability.CAREGIVE);
 
         Path path = storage.resolve(key);
         if (path == null || !Files.isReadable(path)) {

@@ -39,6 +39,11 @@ export default function GrandmothersTale() {
   const [done, setDone] = useState(false)
   const audioRef = useRef<HTMLAudioElement | null>(null)
 
+  // What happened in each story, for the game's module to score (games/modules/grandmothersTale).
+  const trialsRef = useRef<{ storyId: string; wrongTaps: number; replays: number; latencyMs: number | null }[]>([])
+  const wrongRef = useRef(0)
+  const replaysRef = useRef(0)
+
   const story: DemoStory | undefined = stories[index]
 
   useEffect(() => onSpeakingChange(setSpeaking), [])
@@ -48,7 +53,10 @@ export default function GrandmothersTale() {
   const tell = useCallback(
     (isReplay: boolean) => {
       if (!story) return
-      if (isReplay) session.recordReplay()
+      if (isReplay) {
+        session.recordReplay()
+        replaysRef.current += 1
+      }
       setPhase('listening')
 
       // A recorded family voice always wins over synthesis.
@@ -102,17 +110,25 @@ export default function GrandmothersTale() {
 
   const choose = async (option: (typeof options)[number], e: React.MouseEvent) => {
     if (phase !== 'choosing' || !story) return
-    session.recordTap()
+    const latency = session.recordTap()
 
     if (option.correct) {
       cue('petal')
       burst(e.clientX, e.clientY)
       setPhase('answered')
       setBlooms((b) => b + 1)
+      trialsRef.current.push({
+        storyId: story.id,
+        wrongTaps: wrongRef.current,
+        replays: replaysRef.current,
+        latencyMs: latency > 0 ? latency : null,
+      })
+      wrongRef.current = 0
+      replaysRef.current = 0
       window.setTimeout(async () => {
         if (index + 1 >= stories.length) {
           setDone(true)
-          await session.finish(1)
+          await session.finish(1, [...trialsRef.current])
         } else {
           setIndex((i) => i + 1)
         }
@@ -123,6 +139,7 @@ export default function GrandmothersTale() {
     // Gently home again, and the story is offered once more — no penalty sound,
     // no mark against her, no "try again" scolding.
     session.recordCorrection()
+    wrongRef.current += 1
     setReturning(option.id)
     window.setTimeout(() => setReturning(null), 950)
     if (session.axes.hintRichness >= 1) {
@@ -131,6 +148,9 @@ export default function GrandmothersTale() {
   }
 
   const restart = () => {
+    trialsRef.current = []
+    wrongRef.current = 0
+    replaysRef.current = 0
     setIndex(0)
     setBlooms(0)
     setDone(false)

@@ -87,8 +87,6 @@ export default function App() {
             </RequireRole>
           }
         />
-        {/* Sample data for a screen to look at with no server. Development builds only. */}
-        {import.meta.env.DEV && <Route path="/caregiver/demo" element={<Dashboard demo />} />}
         {/* Setting a patient up on the tablet itself belongs to the time before pairing. Development builds only. */}
         {import.meta.env.DEV && <Route path="/caregiver/setup" element={<Setup />} />}
 

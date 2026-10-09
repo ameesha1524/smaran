@@ -54,9 +54,6 @@ class AuthorizationMatrixIT extends ApiTest {
     static final Map<String, Map<Who, Integer>> GROUPS = Map.of(
             // Set the patient up and manage her access.
             "CAREGIVE", table(401, OK, 404, 403, 403, OK, 403, 403),
-            // What her family can do on her behalf. Her tablet does not use these:
-            // it has its own endpoints, below, and is refused here.
-            "PLAY", table(401, OK, 404, 403, 403, OK, 403, 403),
             // Read the dashboard and the report: the one thing a doctor may do.
             "CLINICAL_READ", table(401, OK, 404, OK, 404, OK, 403, 403),
             // A caregiver's own list and their patient creation.
@@ -83,10 +80,14 @@ class AuthorizationMatrixIT extends ApiTest {
     }
 
     private AppUser owner;
+    private String alertId;
     private AppUser doctor;
     private Patient p;
     private Patient q;
     private final Map<Who, String> tokens = new EnumMap<>(Who.class);
+
+    @org.springframework.beans.factory.annotation.Autowired
+    org.smaran.repo.AlertRepository alerts;
 
     @org.junit.jupiter.api.BeforeAll
     void setUp() throws Exception {
@@ -98,6 +99,15 @@ class AuthorizationMatrixIT extends ApiTest {
         p = newPatient(owner);
         q = newPatient(other);
         grantTo(p, doctor, owner, 30);
+        org.smaran.domain.Alert alert = new org.smaran.domain.Alert();
+        alert.setPatientId(p.getId());
+        alert.setKind("DOMAIN_DECLINE");
+        alert.setTarget("MOTOR");
+        alert.setSeverity("watch");
+        alert.setMessage("synthetic");
+        alert.setOpenedAt(java.time.Instant.now());
+        alert.setLastSeenAt(java.time.Instant.now());
+        alertId = alerts.save(alert).getId();
 
         tokens.put(Who.OWNER, tokenFor(owner));
         tokens.put(Who.OTHER_CAREGIVER, tokenFor(other));
@@ -124,25 +134,17 @@ class AuthorizationMatrixIT extends ApiTest {
         e.add(new Endpoint("CAREGIVE", HttpMethod.PUT, "/api/patient/{p}/objects", "[]"));
         e.add(new Endpoint("CAREGIVE", HttpMethod.PUT, "/api/reminder/{p}/schedule", "[]"));
         e.add(new Endpoint("CAREGIVE", HttpMethod.POST, "/api/reminder/trigger", "{" + pid + "}"));
-
-        // PLAY
-        e.add(new Endpoint("PLAY", HttpMethod.GET, "/api/patient/{p}/profile", null));
-        e.add(new Endpoint("PLAY", HttpMethod.GET, "/api/patient/{p}/objects", null));
-        e.add(new Endpoint("PLAY", HttpMethod.POST, "/api/patient/{p}/mood", "{\"mood\":\"QUIET\",\"localHour\":9}"));
-        e.add(new Endpoint("PLAY", HttpMethod.POST, "/api/session", "{" + pid + ",\"gameType\":\"KOI_ARE_JUMPING\",\"startedAt\":\"2026-10-07T04:30:00Z\"}"));
-        e.add(new Endpoint("PLAY", HttpMethod.POST, "/api/sync/sessions", "{" + pid + ",\"sessions\":[],\"vectors\":[]}"));
-        e.add(new Endpoint("PLAY", HttpMethod.POST, "/api/biomarker/vector", "{" + pid + "}"));
-        e.add(new Endpoint("PLAY", HttpMethod.POST, "/api/cognitive/sample", "{\"sessionId\":\"{p}:KOI_ARE_JUMPING:1\"}"));
-        e.add(new Endpoint("PLAY", HttpMethod.GET, "/api/game/{p}/route", null));
-        e.add(new Endpoint("PLAY", HttpMethod.GET, "/api/garden/{p}", null));
-        e.add(new Endpoint("PLAY", HttpMethod.POST, "/api/garden/{p}/water", "{\"gameType\":\"KOI_ARE_JUMPING\"}"));
-        e.add(new Endpoint("PLAY", HttpMethod.GET, "/api/family/{p}/members", null));
-        e.add(new Endpoint("PLAY", HttpMethod.GET, "/api/reminder/{p}/schedule", null));
+        e.add(new Endpoint("CAREGIVE", HttpMethod.POST, "/api/patients/{p}/alerts/" + alertId + "/acknowledge", null));
 
         // CLINICAL_READ
         e.add(new Endpoint("CLINICAL_READ", HttpMethod.GET, "/api/caregiver/dashboard/{p}", null));
         e.add(new Endpoint("CLINICAL_READ", HttpMethod.GET, "/api/report/patient/{p}", null));
         e.add(new Endpoint("CLINICAL_READ", HttpMethod.GET, "/api/biomarker/{p}/trend", null));
+        e.add(new Endpoint("CLINICAL_READ", HttpMethod.GET, "/api/caregiver/patients/{p}/timeseries", null));
+        e.add(new Endpoint("CLINICAL_READ", HttpMethod.GET, "/api/caregiver/patients/{p}/sessions", null));
+        e.add(new Endpoint("CLINICAL_READ", HttpMethod.GET, "/api/caregiver/patients/{p}/alerts", null));
+        e.add(new Endpoint("CLINICAL_READ", HttpMethod.GET, "/api/caregiver/patients/{p}/events", null));
+        e.add(new Endpoint("CLINICAL_READ", HttpMethod.GET, "/api/caregiver/patients/{p}/sentiment", null));
 
         // DEVICE_ONLY: no patient in the path, because the tablet's token names her.
         e.add(new Endpoint("DEVICE_ONLY", HttpMethod.GET, "/api/device/me", null));
@@ -150,8 +152,11 @@ class AuthorizationMatrixIT extends ApiTest {
         e.add(new Endpoint("DEVICE_ONLY", HttpMethod.GET, "/api/device/game/route", null));
         e.add(new Endpoint("DEVICE_ONLY", HttpMethod.GET, "/api/device/garden", null));
         e.add(new Endpoint("DEVICE_ONLY", HttpMethod.POST, "/api/device/garden/water", "{\"gameType\":\"KOI_ARE_JUMPING\"}"));
-        e.add(new Endpoint("DEVICE_ONLY", HttpMethod.POST, "/api/device/sessions",
-                "{\"gameType\":\"KOI_ARE_JUMPING\",\"startedAt\":\"2026-10-07T04:30:00Z\"}"));
+        // A session the server will refuse to store still passes the door: the answer is 200 with a reason.
+        e.add(new Endpoint("DEVICE_ONLY", HttpMethod.POST, "/api/device/sessions", "{\"gameId\":\"koi-are-jumping\"}"));
+        e.add(new Endpoint("DEVICE_ONLY", HttpMethod.POST, "/api/device/cognitive/sample", "{\"sessionId\":\"x\"}"));
+        // With no model key configured the answer is 200 with no signals, which is still "allowed".
+        e.add(new Endpoint("DEVICE_ONLY", HttpMethod.POST, "/api/device/journal/analyse", "{\"text\":\"a quiet morning\"}"));
         e.add(new Endpoint("DEVICE_ONLY", HttpMethod.POST, "/api/device/sessions/batch", "{\"sessions\":[],\"vectors\":[]}"));
         e.add(new Endpoint("DEVICE_ONLY", HttpMethod.POST, "/api/device/biomarker/vector", "{}"));
         e.add(new Endpoint("DEVICE_ONLY", HttpMethod.POST, "/api/device/mood", "{\"mood\":\"QUIET\",\"localHour\":9}"));
@@ -217,6 +222,6 @@ class AuthorizationMatrixIT extends ApiTest {
         }
         long groups = endpoints().stream().map(Endpoint::group).distinct().count();
         assertEquals(GROUPS.size(), groups, "a group is defined but has no endpoint, or the reverse");
-        assertTrue(endpoints().size() >= 35, "the matrix should cover every patient endpoint");
+        assertTrue(endpoints().size() >= 38, "the matrix should cover every patient endpoint");
     }
 }

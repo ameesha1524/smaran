@@ -2,13 +2,10 @@
  * The cognitive map: which game reads which domain, and what a session
  * measured.
  *
- *   readingsFor(session) — games that keep round-level data build a rich
- *   reading themselves (duckReadings, koiReadings, the Lotus Frog's own
- *   report). Every other game is read as its completion rate against its one
- *   primary domain.
- *
- * How a reading then moves the profile is not decided here. That is the
- * scoring engine in lib/scoring, the single path for every game.
+ * What a session said is not decided here any more: each game's module
+ * (games/modules) scores its own trials into contributions, and the scoring
+ * engine in lib/scoring folds them in, the single path for every game. What
+ * remains is the routing's view of the games, and the weakest-domain rule.
  *
  * Mirrored in backend/src/main/java/org/smaran/service/CognitiveMap.java. The
  * reading *builders* below are device-only — they need round data the server
@@ -16,7 +13,7 @@
  * both places and must stay identical.
  */
 
-import type { DomainReadings, Domain, GameType, SessionResultDraft } from './types'
+import type { DomainReadings, Domain, GameType } from './types'
 
 /* ---------------------------------------------------------------- tables */
 
@@ -69,33 +66,6 @@ export const LOW_EFFORT: GameType[] = ['FAMILY_GROVE', 'MORNING_RITUALS', 'KOI_A
 /** Games whose core mechanic is a response window — dropped for a supported hand. */
 export const TIMING_GAMES: GameType[] = ['KOI_ARE_JUMPING']
 
-/* ---------------------------------------------------------- the readings */
-
-/**
- * Keep only what could be real: known domains, finite numbers, clamped to
- * 0–1, and nothing with zero confidence (a reading with no evidence is not a
- * reading). The server applies exactly the same filter to what it receives.
- */
-export function sanitizeReadings(input: DomainReadings | undefined | null): DomainReadings {
-  const out: DomainReadings = {}
-  if (!input) return out
-  for (const d of DOMAINS) {
-    const r = input[d]
-    if (!r || !Number.isFinite(r.score) || !Number.isFinite(r.confidence)) continue
-    const confidence = clamp01(r.confidence)
-    if (confidence <= 0) continue
-    out[d] = { score: round(clamp01(r.score)), confidence: round(confidence) }
-  }
-  return out
-}
-
-/** What a session measured — its own readings if it has them, else its completion rate. */
-export function readingsFor(session: Pick<SessionResultDraft, 'gameType' | 'completionRate' | 'domainReadings'>): DomainReadings {
-  const own = sanitizeReadings(session.domainReadings)
-  if (Object.keys(own).length > 0) return own
-  return sanitizeReadings({ [PRIMARY_DOMAIN[session.gameType]]: { score: session.completionRate, confidence: 1 } })
-}
-
 /* ----------------------------------------------------- weakest domain */
 
 export interface ReadingHistoryEntry {
@@ -129,73 +99,5 @@ export function weakestDomainFromHistory(history: ReadingHistoryEntry[], now = D
   return worst
 }
 
-/* ------------------------------------------------- per-game readings */
-
-export interface DuckRound {
-  spanLength: number
-  flashDurationMs: number
-  wasCorrect: boolean
-  attemptsBeforeCorrect: number
-}
-
-/**
- * Duck Roll Call → executiveFunction.
- *
- * Half accuracy, half the level she was working at. Accuracy alone would
- * score a flawless span-3 round the same as a flawless span-6 one, which is
- * exactly the thing a working-memory span task exists to tell apart. Level
- * is mostly span (3→6) with a little credit for a shorter flash (2000→800 ms).
- *
- * A flawless sitting at the starting level reads 0.5 — deliberately neutral,
- * because span 3 is where everyone starts and it says little about ceiling.
- * Confidence grows with rounds played, full at four.
- */
-export function duckReadings(rounds: DuckRound[]): DomainReadings {
-  if (rounds.length === 0) return {}
-  let total = 0
-  for (const r of rounds) {
-    const accuracy = r.wasCorrect ? 1 : Math.max(0.3, 1 - 0.15 * r.attemptsBeforeCorrect)
-    const span = clamp01((r.spanLength - 3) / 3)
-    const speed = clamp01((2000 - r.flashDurationMs) / 1200)
-    const level = 0.8 * span + 0.2 * speed
-    total += 0.5 * accuracy + 0.5 * level
-  }
-  return {
-    executiveFunction: { score: round(total / rounds.length), confidence: round(Math.min(1, rounds.length / 4)) },
-  }
-}
-
-export interface KoiRound {
-  wasTapped: boolean
-  reactionMs: number | null
-  leapMs: number
-}
-
-/**
- * The Koi Are Jumping → motor.
- *
- * Mostly whether she responded at all (70%), partly how early in the leap
- * (30%): a tap as the creature leaves the water is faster than one as it
- * lands. Speed is read relative to each leap's own air time, since leaps
- * now vary in length. Confidence is full at a complete six-leap sitting.
- */
-export function koiReadings(rounds: KoiRound[]): DomainReadings {
-  if (rounds.length === 0) return {}
-  const tapped = rounds.filter((r) => r.wasTapped && r.reactionMs != null)
-  const hitRate = tapped.length / rounds.length
-  const speed = tapped.length
-    ? tapped.reduce((sum, r) => sum + clamp01(1 - (r.reactionMs as number) / Math.max(1, r.leapMs)), 0) / tapped.length
-    : 0
-  const score = tapped.length ? 0.7 * hitRate + 0.3 * speed : 0
-  return { motor: { score: round(score), confidence: round(Math.min(1, rounds.length / 6)) } }
-}
-
 /* ----------------------------------------------------------- helpers */
 
-function clamp01(n: number): number {
-  return Math.max(0, Math.min(1, n))
-}
-
-function round(n: number): number {
-  return Number(n.toFixed(3))
-}

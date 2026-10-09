@@ -13,6 +13,8 @@ import java.util.UUID;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import org.smaran.domain.Enums.GameType;
 import org.smaran.domain.Enums.Mood;
 
@@ -90,4 +92,54 @@ public class GameSession {
     private String metrics;
 
     private Instant receivedAt = Instant.now();
+
+    /* ------------------------------------------------ the session envelope */
+    // All nullable: rows stored before the envelope existed stay valid, and
+    // fall back to `domainReadings` and `completionRate`.
+
+    /** Generated on the tablet. The second dedupe key, beside (patientId, startedAt). */
+    @Column(name = "client_session_id", length = 36)
+    private String clientSessionId;
+
+    /** The registry id, like duck-roll-call. `gameType` is its enum twin. */
+    @Column(name = "game_id", length = 60)
+    private String gameId;
+
+    @Column(name = "device_id", length = 36)
+    private String deviceId;
+
+    private Boolean completed;
+
+    private Boolean abandoned;
+
+    @Column(name = "hour_of_day")
+    private Integer hourOfDay;
+
+    /** Game-specific raw trials. Stored, never shown to anyone, never read by the engine. */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(columnDefinition = "jsonb")
+    private String trials;
+
+    /** What the session said about each target: a list of target, raw, confidence, because. */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(columnDefinition = "jsonb")
+    private String contributions;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(columnDefinition = "jsonb")
+    private String markers;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(columnDefinition = "jsonb")
+    private String difficulty;
+
+    @Column(name = "precomputed_reading")
+    private Boolean precomputedReading;
+
+    @Column(name = "engine_version", length = 20)
+    private String engineVersion;
+
+    /** `device` until the server has re-scored the raw trials itself. See V5. */
+    @Column(name = "scoring_trust", nullable = false, length = 20)
+    private String scoringTrust = "device";
 }

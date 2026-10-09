@@ -15,6 +15,15 @@ public interface GameSessionRepository extends JpaRepository<GameSession, String
 
     List<GameSession> findTop50ByPatientIdOrderByStartedAtDesc(String patientId);
 
+    Optional<GameSession> findByClientSessionId(String clientSessionId);
+
+    /** Every session, oldest first: the order the engine must see them in to rebuild a profile. */
+    List<GameSession> findByPatientIdOrderByStartedAtAsc(String patientId);
+
+    Optional<GameSession> findTopByPatientIdOrderByStartedAtDesc(String patientId);
+
+    List<GameSession> findByPatientIdOrderByStartedAtDesc(String patientId, org.springframework.data.domain.Pageable page);
+
     long countByPatientIdAndStartedAtAfter(String patientId, Instant after);
 
     /** The first two sessions are the onboarding; routing needs to know where she is. */

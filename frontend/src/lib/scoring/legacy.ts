@@ -60,3 +60,17 @@ export function domainScoresFrom(state: ScoringState, previous: DomainScores): D
   }
   return next
 }
+
+/**
+ * A session's contributions to the six domains, as 0–1 readings. The device
+ * keeps a short history of these for the weakest-domain rule, which still thinks
+ * in the legacy shape.
+ */
+export function readingsFromContributions(contributions: readonly ScoreContribution[]): DomainReadings {
+  const out: DomainReadings = {}
+  for (const d of LEGACY_DOMAINS) {
+    const c = contributions.find((x) => x.target === DOMAIN_ID_OF[d])
+    if (c && c.confidence > 0) out[d] = { score: Number((c.raw / 100).toFixed(3)), confidence: Number(c.confidence.toFixed(3)) }
+  }
+  return out
+}

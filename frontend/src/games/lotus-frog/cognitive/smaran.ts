@@ -14,29 +14,23 @@ import type { CogDomain } from "./domains";
 import { COG_DOMAINS } from "./domains";
 import type { FrogSessionReport } from "./report";
 
-import type {
-  DomainReadings,
-  MoodKey,
-  SessionResultDraft,
-} from "../../../lib/types";
+import type { MoodKey, SessionResultDraft } from "../../../lib/types";
+import { frogContributions, type FrogReading } from "../../modules/lotusFrog";
 
 /** An abandoned visit is signal-poor: every reading counts for 40% as much. */
 const ABANDON_DAMP = 0.4;
 
 /**
- * The report's per-domain readings, as Smaran readings. Domains the pond did
- * not measure (always `language`) are left out rather than sent as null, and
- * abandonment is folded into confidence — the EMA then does the rest.
+ * The report's per-domain readings, as the pond made them. Domains the pond did
+ * not measure (always `language`) come through with no score and are dropped, and
+ * abandonment is folded into confidence — the engine's EMA then does the rest.
  */
-export function frogReadings(report: FrogSessionReport): DomainReadings {
+export function frogReadings(report: FrogSessionReport): FrogReading[] {
   const damp = report.abandoned ? ABANDON_DAMP : 1;
-  const out: DomainReadings = {};
-  for (const d of COG_DOMAINS as CogDomain[]) {
+  return (COG_DOMAINS as CogDomain[]).map((d) => {
     const reading = report.domains[d];
-    if (reading.score === null || reading.confidence <= 0) continue;
-    out[d] = { score: reading.score, confidence: reading.confidence * damp };
-  }
-  return out;
+    return { domain: d, score: reading.score, confidence: reading.confidence * damp };
+  });
 }
 
 /**
@@ -59,7 +53,11 @@ export function toSessionDraft(
     difficultyTier: 1,
     cognitiveLoadScore: report.cognitiveLoadScore,
     moodAtStart,
-    domainReadings: frogReadings(report),
-    metrics: { ...report.raw, abandoned: report.abandoned, highlights: report.highlights },
+    completed: !report.abandoned,
+    abandoned: report.abandoned,
+    // The pond's own raw behavioural breakdown, kept as the session's trial record; never interpreted downstream.
+    trials: [{ ...report.raw, highlights: report.highlights }],
+    // The pond scored itself. Sent as it scored, and flagged so the server never scores it again.
+    contributions: frogContributions(frogReadings(report), report.abandoned),
   };
 }

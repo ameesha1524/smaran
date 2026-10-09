@@ -1,4 +1,4 @@
-import type { ScoringState } from './scoring/types'
+import type { ScoreContribution, ScoringState } from './scoring/types'
 
 /**
  * Shared domain types. These mirror the Spring Boot entities one-for-one so
@@ -110,23 +110,6 @@ export interface CognitiveProfile {
   updatedAt: string
 }
 
-export interface GameSession {
-  id?: string
-  patientId: string
-  gameType: GameType
-  startedAt: string
-  durationMs: number
-  completionRate: number
-  difficultyTier: number
-  cognitiveLoadScore: number
-  moodAtStart: MoodKey
-  objectResults?: CognitiveObjectResult[]
-  /** The readings the profile was updated from — resolved, never absent once sent. */
-  domainReadings?: DomainReadings
-  /** Game-specific raw measures (span history, reaction times…) for the caregiver view. */
-  metrics?: Record<string, unknown>
-}
-
 export interface CognitiveObjectResult {
   objectName: string
   semanticCluster: SemanticCluster
@@ -203,23 +186,34 @@ export interface GameRoute {
   rationale: string[]
 }
 
+/**
+ * What a game hands `completeSession` when she finishes. The pipeline turns it
+ * into a SessionEnvelope: it scores the trials with the game's module, folds the
+ * contributions into the local profile, queues the envelope and syncs it.
+ */
 export interface SessionResultDraft {
   gameType: GameType
+  /** Epoch milliseconds. */
   startedAt: number
   durationMs: number
+  /** 0–1: how much of the sitting she did. Waters the garden on the device; it is not a score. */
   completionRate: number
+  /** Defaults to `completionRate >= 0.95`. */
+  completed?: boolean
+  /** She left in the middle of a round. */
+  abandoned?: boolean
   difficultyTier: number
+  difficultyParams?: Record<string, number | string>
   cognitiveLoadScore: number
   moodAtStart: MoodKey
-  objectResults?: CognitiveObjectResult[]
   /**
-   * What this session measured, domain by domain. Games with round-level data
-   * (Duck Roll Call, Koi Are Jumping, Lotus Frog) fill this in themselves;
-   * when it is absent, lib/cognitiveMap.ts reads `completionRate` against the
-   * game's primary domain.
+   * The raw trials, in the game's own shape (see its module in games/modules).
+   * They are scored on the device, stored by the server, and never shown to
+   * anyone. A game with none is read from its completion rate at low confidence.
    */
-  domainReadings?: DomainReadings
-  metrics?: Record<string, unknown>
+  trials?: unknown[]
+  /** Only for a game that scores itself (the Lotus Frog); sent as it is. */
+  contributions?: ScoreContribution[]
 }
 
 /* ------------------------------------------------------------- pairing */
@@ -298,30 +292,87 @@ export interface VoiceNote {
   fromKinshipTerm?: string
 }
 
-export interface DashboardSummary {
-  patient: Patient
-  garden: GardenState
-  sessionsThisWeek: number
-  lastActive: string | null
-  moodTrend: { date: string; mood: MoodKey }[]
-  domainTrend: {
-    date: string
-    language: number
-    visualSemantic: number
-    motor: number
-    affective: number
-    temporal: number
-    executiveFunction: number
-  }[]
-  heatmap: { date: string; minutes: number }[]
-  perGame: { gameType: GameType; sessions: number; avgScore: number; trend: 'UP' | 'FLAT' | 'DOWN' }[]
-  familyPhases: { id: string; name: string; phase: GrovePhase }[]
-  alerts: DashboardAlert[]
-  acousticTrend: { date: string; jitter: number; shimmer: number }[]
+/* ------------------------------------------------------------ dashboards */
+
+export interface DomainCard {
+  /** `LANGUAGE`, `EXECUTIVE` ... or a sub-signal like `WORKING_MEMORY_SPAN`. */
+  target: string
+  label: string
+  /** 0–100: the engine's running level. */
+  level: number
+  status: 'stable' | 'watch' | 'decline' | 'improving'
+  velocity: number
+  /** 0–1. Until about a dozen readings, a status is shown as stable whatever it says. */
+  confidence: number
+  observations: number
+  /** The levels after her last few sessions, oldest first. */
+  spark: number[]
 }
 
-export interface DashboardAlert {
-  level: 'ORANGE' | 'AMBER' | 'YELLOW'
-  code: 'MISSED_DAYS' | 'LANGUAGE_REGRESSION' | 'MOTOR_VARIANCE' | 'VOICE_BIOMARKER' | 'CLUSTER_DECLINE'
+export interface AlertView {
+  id: string
+  kind: 'DOMAIN_DECLINE' | 'MISSED_DAYS' | 'SUNDOWNING' | string
+  target: string
+  severity: 'watch' | 'decline' | 'info'
   message: string
+  openedAt: string
+  lastSeenAt: string
+  resolvedAt: string | null
+  acknowledgedAt: string | null
+}
+
+export interface GameInfo {
+  id: string
+  title: string
+  primaryDomains: string[]
+  retired: boolean
+}
+
+export interface DashboardView {
+  patient: { id: string; name: string; kinshipTerm: string; languageCode: string }
+  /** A doctor's view is the same without the family around her. */
+  doctorView: boolean
+  garden: GardenState
+  sessionsLast7Days: number
+  lastActive: string | null
+  domains: DomainCard[]
+  subSignals: DomainCard[]
+  markers: { workingMemorySpan: number | null; inhibitionBreakdownTier: number | null; trajectoryPrecisionMs: number | null } | null
+  alerts: AlertView[]
+  moodTrend: { date: string; mood: MoodKey }[]
+  heatmap: { date: string; minutes: number }[]
+  acousticTrend: { date: string; jitter: number; shimmer: number }[]
+  familyPhases: { id: string; name: string; phase: GrovePhase }[]
+  /** Sittings by weekday (0 = Monday) and hour, over 90 days. Empty cells are left out. */
+  activity: { weekday: number; hour: number; sessions: number }[]
+  games: GameInfo[]
+}
+
+/** One journal entry as signals: how warm (-1 to 1), how agitated (0 to 1), and any concern flags. */
+export interface SentimentPoint {
+  at: string
+  valence: number
+  arousal: number
+  concernFlags: string[]
+}
+
+export interface TimePoint {
+  at: string
+  levels: Record<string, number>
+  statuses: Record<string, string>
+}
+
+export interface SessionRow {
+  id: string
+  startedAt: string
+  gameId: string | null
+  gameTitle: string
+  durationMs: number
+  completed: boolean
+  abandoned: boolean
+  difficultyTier: number
+  moodAtStart: string | null
+  contributions: { target: string; raw: number; confidence: number; because: string }[]
+  /** `device` until the server has scored the raw trials itself and agreed. */
+  scoringTrust: 'device' | 'server'
 }

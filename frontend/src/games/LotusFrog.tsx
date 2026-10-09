@@ -64,7 +64,7 @@ export default function LotusFrog() {
       void completeRef.current(draft)
       if (import.meta.env.DEV) {
         console.info('[lotus-frog] session report', report)
-        console.info('[lotus-frog] domain readings →', draft.domainReadings)
+        console.info('[lotus-frog] contributions →', draft.contributions)
       }
     })
     game.start()

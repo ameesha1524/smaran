@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { resolveMedia } from '../lib/media'
 import { useNavigate } from 'react-router-dom'
 import GameShell, { Progress, SessionComplete } from '../components/GameShell'
 import { useAdaptiveSession } from '../hooks/useAdaptiveSession'
@@ -68,6 +69,10 @@ export default function FamilyGrove() {
   const [done, setDone] = useState(false)
   const audioRef = useRef<HTMLAudioElement | null>(null)
 
+  // One entry per round, for the game's module to score (games/modules/familyGrove).
+  const trialsRef = useRef<{ memberId: string; phase: number; wrongTaps: number; latencyMs: number | null }[]>([])
+  const wrongRef = useRef(0)
+
   // Family Grove is the one place the room is tuned for grounding, not calm.
   useEffect(() => {
     setTone(528)
@@ -75,9 +80,22 @@ export default function FamilyGrove() {
   }, [])
 
   useEffect(() => {
-    void familyApi.members(patient.id).then((list) => {
-      if (list.length) setMembers(list)
+    let alive = true
+    void familyApi.members(patient.id).then(async (list) => {
+      if (!list.length) return
+      // An image or audio tag cannot send the tablet's token, so her family's files are fetched with it.
+      const resolved = await Promise.all(
+        list.map(async (m) => ({
+          ...m,
+          photoUrl: await resolveMedia(m.photoUrl),
+          voiceNoteUrl: await resolveMedia(m.voiceNoteUrl),
+        })),
+      )
+      if (alive) setMembers(resolved)
     })
+    return () => {
+      alive = false
+    }
   }, [patient.id])
 
   const subject = useMemo(() => members[round % Math.max(1, members.length)], [members, round])
@@ -145,10 +163,12 @@ export default function FamilyGrove() {
       // Tell the family. They are prompted to record a new voice note, which
       // is what she will hear next time.
       void familyApi.recognised(patient.id, memberId, true, latency)
+      trialsRef.current.push({ memberId, phase, wrongTaps: wrongRef.current, latencyMs: latency > 0 ? latency : null })
+      wrongRef.current = 0
 
       window.setTimeout(async () => {
         if (round + 1 >= ROUNDS) {
-          const outcome = await session.finish(1)
+          const outcome = await session.finish(1, [...trialsRef.current])
           setDone(true)
           if (outcome.milestone) setMilestone(true)
         } else {
@@ -159,6 +179,7 @@ export default function FamilyGrove() {
     }
 
     session.recordCorrection()
+    wrongRef.current += 1
     void familyApi.recognised(patient.id, subject.id, false, latency)
     setReturning(memberId)
     setShowHint(true)
@@ -177,6 +198,8 @@ export default function FamilyGrove() {
   }, [members, subject, phase, session.axes.choiceCount, round])
 
   const restart = () => {
+    trialsRef.current = []
+    wrongRef.current = 0
     setRound(0)
     setBlooms(0)
     setDone(false)

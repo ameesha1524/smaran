@@ -3,7 +3,7 @@
 Read this at the start of every session, after `docs/MASTER_PROMPT.md`.
 All patient data in this repository is synthetic or demo data.
 
-Last updated: 2026-10-09 (end of Phase 3).
+Last updated: 2026-10-09 (end of Phase 4).
 
 ## Phase status
 
@@ -12,20 +12,21 @@ Last updated: 2026-10-09 (end of Phase 3).
 | 0. Recon, baseline, plan | **Done** | `phase-0-recon` | PR #1 merged. Plan in `docs/PLAN.md` |
 | 1. Foundation: database, contracts, scoring | **P0 and P1 done** | `phase-1-foundation` | PR #2 merged into `phase-0-recon` by mistake; PR #3 carries it to `master` |
 | 2. Authentication and RBAC | **P0 and P1 done** | `phase-2-auth` | PR #4 merged into `master` |
-| 3. Device pairing | **P0 and P1 done** | `phase-3-pairing` | Verified; see "Phase 3" below |
-| 4. Games to dashboards | Not started | | |
+| 3. Device pairing | **P0 and P1 done** | `phase-3-pairing` | PR #5 merged into `master` |
+| 4. Games to dashboards | **P0 done; P1 items 8, 11, 12, 13 done; 9 and 10 (upload) not** | `phase-4-games` | Verified; see "Phase 4" below |
 | 5. Data science | Not started | | |
 | 6. DevOps | Not started | | |
 | 7. Hardening and showcase | Not started | | |
 
-**Next:** Phase 4 (games to server to dashboards).
+**Next:** Phase 5 (data science).
 
 ## Needs the human
 
 | # | What | Why | Until then |
 |---|---|---|---|
 | H1 | ~~Install Docker Desktop~~ | Done 2026-10-06 | none |
-| H2 | **Merge the Phase 3 PR** | Merging to `master` is the owner's call | Phase 4 builds on it |
+| H2 | **Merge the Phase 4 PR** | Merging to `master` is the owner's call | Phase 5 builds on it |
+| H8 | Optional: set `ANTHROPIC_API_KEY` to try the journal reading | Without it a journal entry is not read and the dashboard's writing panel stays empty | Nothing else needs it |
 | H6 | ~~Pairing code format~~ | Decided 2026-10-07: 6 characters, 72 hours (the prompt's spec) | none |
 | H7 | Choose real `ADMIN_EMAIL` and `ADMIN_PASSWORD` for any deployment | The first administrator is created from these on first start; nothing in source can create one | Dev and demo use seeded demo accounts (see below); local runs set nothing |
 | H3 | Install `make` (optional) | `make` is not on PATH | Run the commands under each Makefile target by hand |
@@ -67,6 +68,18 @@ Last updated: 2026-10-09 (end of Phase 3).
 | 2026-10-09 | A person's calls and a tablet's calls never share a credential in the client | A caregiver signing in on the tablet's browser must not make the tablet a caregiver, nor the tablet's token reach a family endpoint |
 | 2026-10-09 | The service worker no longer caches API responses | It keyed them by address alone: a re-paired tablet or a doctor with ended access would be served another's answer |
 | 2026-10-09 | The old tablet-style endpoints (`/api/session`, `/api/garden/{id}` ...) stay for family and admin until Phase 4 | Phase 4 rebuilds ingestion and removes them |
+| 2026-10-09 | The envelope (`SessionEnvelope`) is the unit that travels, and the server accepts a session only for a game in `game-registry.json`, with contributions only to the targets that game lists | The server refuses a language score from a game that does not measure language, and a retired game's session |
+| 2026-10-09 | The tablet scores, the server checks, and re-scores what it can (Duck Roll Call), marking agreement `scoring_trust = server` and counting disagreement in `scoring_mismatch_total` | Offline correctness needs the tablet to score; honesty needs the boundary stated and tested where it can be |
+| 2026-10-09 | A session newer than everything stored is folded in; an older one rebuilds the profile and every snapshot, oldest first | The baseline depends on order; a test shows rebuilt and in-order profiles are identical |
+| 2026-10-09 | Alerts are episodes: one open row per patient, kind and target, updated while it lasts and ended when she is back to her own usual; acknowledging does not close one | No duplicates, no crying wolf |
+| 2026-10-09 | The profile row is locked per patient (an advisory lock first, then a row lock) for the length of an ingestion | Two batches racing for a new patient both tried to create her profile |
+| 2026-10-09 | The open WebSocket is removed; live updates are authorised server-sent events, re-checked before every event | Anyone could subscribe to a patient's topic. Events carry ids only |
+| 2026-10-09 | The old tablet-style endpoints are removed, and `PLAY` with them | The tablet has `/api/device/**`; nothing else was using them |
+| 2026-10-09 | A doctor's dashboard is the same view with the family members removed; raw trials are served to no one | The prompt's read-only subset |
+| 2026-10-09 | The journal is a registered pseudo-game (`journal`, AFFECTIVE only), so a reading is filed as a session | It reuses idempotency, rebuild and snapshots instead of a second path into the profile |
+| 2026-10-09 | The journal prompt and model are the server's; only signals are stored; the entry's text is stored nowhere | A client cannot steer the model; her words are not kept |
+| 2026-10-09 | Sundowning: effect size (Cohen's d, 0.8 to flag, 0.5 to end) of late afternoon against morning, per-game normalised, six sittings minimum in each part | Narrow, guarded, and not a diagnosis |
+| 2026-10-09 | A read is audited once a minute per person per patient | A dashboard is five requests; the list of who has looked was unreadable |
 | 2026-10-07 | D2 decided by the human: pairing codes are 6 characters, valid 72 hours | Follows the prompt. Weaker against guessing than 8 characters / 10 minutes, so Phase 3 keeps both rate limits and the hash-only storage |
 | 2026-10-06 | Phase 1 went ahead on defaults D1, D3, D4 after "go ahead with phase 1" | The human's instruction |
 | 2026-10-06 | Baseline for velocity is trailing: it excludes the score being judged | Otherwise a drop pulls its own baseline down and hides part of itself |
@@ -416,6 +429,86 @@ npm run build                                  → exit 0
 - Family media on the tablet (Phase 4, item 10).
 - Voice notes from the caregiver (Phase 4, item 9).
 
+## Phase 4 — 2026-10-09
+
+Branch `phase-4-games`, from `master` after PR #5.
+
+### What was built
+
+**Backend**
+
+- Migration `V5`: `game_session.scoring_trust`. The tables for snapshots, alerts and journal signals already existed from `V2`.
+- `GameRegistry` and `game-registry.json`; `EnvelopeValidator` (the trust-boundary checks); `SessionIngestionService` (idempotent, locked, in order or rebuilt, snapshots, alerts, events); `Rescorer` and `DuckRollCallScoring` (the Java twin, held to shared vectors).
+- `AlertService`: `DOMAIN_DECLINE` under the configured rule with confidence gating, `MISSED_DAYS` once per quiet spell, `SUNDOWNING` (`SundowningDetector`), acknowledge. `DashboardEvents`: authorised SSE.
+- `DashboardService` rebuilt on what was stored: domain cards, sub-signals, markers, open alerts, timeseries, sessions with reasons, the activity grid, the sentiment trend. `ReportService` fed from the same view. The doctor's view omits the family.
+- The journal: `JournalService`, `AnthropicModelClient` (key from the environment), `JournalSignals` (strict parser, server-held prompt), `POST /api/device/journal/analyse`.
+- Removed: the WebSocket, `SessionController`, `SyncController`, `GardenController`, `CognitiveController` (its two endpoints moved to `/api/device`), the tablet-style reads in other controllers, `PLAY`.
+
+**Frontend**
+
+- A module per game (`games/modules`), the registry, `lib/sessionPipeline.ts` (score once, fold once, build the envelope), `lib/scoring/envelope.ts`, the queue of envelopes, `submitSession` and `syncNow` on `/api/device`.
+- Every game sends trials: Duck Roll Call with the A.5 fields (and a part-played round recorded as unfinished), Grandmother's Tale, Family Grove, Morning Rituals and the Koi game with theirs, the Lotus Frog its own readings flagged as precomputed.
+- The dashboard rebuilt in `caregiver/dashboard/`: patient selector, header stats, domain cards with sparklines and "too early to say", a Recharts trend (30 or 90 days, any domain, alerts marked), markers, sessions with reasons, alerts with acknowledge, the activity grid, the sentiment panel, a live indicator over `lib/sse.ts`. The doctor's page is the same without the family.
+- The tablet fetches her family's files with its own token (`lib/media.ts`).
+- `docs/ADDING_A_GAME.md`; `e2e/phase4_games_flow.py`; `scripts/make_duck_vectors.py` and `duck-roll-call-vectors.json`.
+
+### Commands and results
+
+```
+cd backend
+mvn -o verify -Dsmaran.build.dir=C:/Users/amees/smaran-build   → BUILD SUCCESS
+
+Unit tests: 101, 0 failures
+  incl. DuckRollCallScoringTest 15 (shared vectors), SundowningDetectorTest 6, JournalSignalsTest 7, GameRegistryTest 4
+Integration tests (PostgreSQL 16, embedded process): 401, 0 failures
+  AuthorizationMatrixIT  305   every endpoint as every caller (the removed tablet-style endpoints took their rows with them;
+                               the new views, stream, alert acknowledgement, sentiment and journal are in)
+  IngestionIT             21   NEW
+  JournalAndSundowningIT  10   NEW
+  PairingIT               23
+  AuthFlowIT              18
+  GrantsAndAuditIT        11
+  SchemaAndIngestionIT    11
+  DemoSeedIT               2
+```
+
+```
+cd frontend
+npx tsc -b && npx tsc -p tsconfig.test.json   → clean
+npm test                                       → 8 files, 145 tests passed (was 83)
+npm run build                                  → exit 0
+```
+
+**The tests can fail.** The decision that a session is newer than everything stored was replaced with `true`. `IngestionIT.lateArrivalRebuilds` failed ("MOTOR expected 62.61 but was 59.14"). The change was reverted.
+
+**Browser, end to end.** `e2e/phase4_games_flow.py` drives three Chrome profiles against the real backend (demo profile, authentication on): **44 of 44 checks passed.** It covers: the demo dashboard populated, with chips, a marker, a trend chart and a session opening to its reasons; a new family, a patient, a code and a paired tablet; the tablet playing three real rounds of Duck Roll Call (one with a wrong tap), the family's dashboard showing the session within seconds, live, with its reason, and the server having agreed with the tablet's scoring from the raw rounds; Morning Rituals played with the network cut, the finished game waiting in the queue as an envelope with its attempts, and draining once on reconnect; the same batch sent again changing nothing; the family sharing with the doctor; the doctor read-only, seeing no family names, no raw rounds, getting 404 for a patient not shared, 403 for minting a code or acknowledging an alert; the family removing the tablet, its next sync refused 401, and its screen staying calm.
+
+### Defects found and fixed in this phase
+
+1. **Racing batches for a new patient both created her profile.** The second failed with a duplicate key. An advisory lock per patient is taken first.
+2. **A session's trust mark was silently not saved.** Saving an entity with an assigned id returns a managed copy; the later change went to the original. The stored value is now the one tested.
+3. **A live stream dropped a doctor on every event.** The role check asked whether the current HTTP request was a read; the event arrived on a write request. The check now takes the read-ness as an argument.
+4. **The registry parity test found the two registries disagreed** ("Koi Are Jumping" against "The Koi Are Jumping").
+5. **The "who has looked" list was drowned in copies of one visit.** A dashboard is five requests. Reads are recorded once a minute.
+6. **The old WebSocket let anyone subscribe to a patient's topic with no sign-in.** Nothing used it; it is gone, replaced by authorised events.
+
+### Done-when, checked
+
+| Criterion (showcase steps 2 to 7) | Result |
+|---|---|
+| 2. Caregiver sees the dashboard populated: trends, chips, markers, sessions | Yes (alerts list appears when one is open; the seeded patient has none open) |
+| 3. A new patient with consent, a code, a second browser pairs | Yes |
+| 4. Play a game on the tablet; the dashboard shows it live | Yes for Duck Roll Call (real screen) and Morning Rituals. The Lotus Frog is a canvas game: unit-tested, not played |
+| 5. Offline play syncs once; the same batch changes nothing | Yes |
+| 6. Doctor sees only shared patients, read-only; no trials, journal text or media | Yes |
+| 7. Revoking the tablet refuses its next sync, calmly | Yes |
+
+### Not done in Phase 4
+
+- P1 item 9, caregiver voice notes (record in the browser, upload, the tablet plays them in the morning card).
+- P1 item 10's caregiver side: the upload screen for photographs, voices and hints outside development builds. The tablet fetches the files; nothing in a real deployment puts them there yet.
+- P2: the Koi inhibition version and the voice-trend alert.
+
 ## Known issues
 
 Found during recon. Each is scheduled in `docs/PLAN.md`.
@@ -473,6 +566,23 @@ Found during recon. Each is scheduled in `docs/PLAN.md`.
 35. **The old tablet-style endpoints remain for family and admin** (`/api/session`, `/api/sync/sessions`, `/api/garden/{id}` ...). Phase 4 rebuilds ingestion and removes them.
 36. **A removed tablet's queue stays on the tablet** until it is paired again, by design.
 37. **Pairing and removal are audited, but the family's audit list does not say which tablet.** The record has the device id; the panel shows only "paired a tablet".
+
+## Found in Phase 4
+
+38. **Trust boundary.** Scores are computed on the tablet. The server checks range and plausibility for every game and re-scores only Duck Roll Call. A tablet that lies inside the allowed range for any other game is not caught. Each session says `scoring_trust` so it can be seen.
+39. **No game measures inhibition or trajectory precision,** so those two clinician markers always read "not measured yet". The Koi game has no creature to leave alone.
+40. **The Lotus Frog and Koi games are canvas games and were not played by the browser test.** The Lotus Frog's readings are passed through as it computed them; the server cannot check them.
+41. **Voice notes and the upload screen are not done** (see above). The "morning dew" card still reads local notes only.
+42. **Grandmother's Tale, Family Grove and Morning Rituals record nothing if she leaves before the end.** Predates this phase.
+43. **The seeded demo patient has 0 blooms and no open alert.** The seeder does not recompute the garden. Phase 5 loads a synthetic cohort.
+44. **The activity grid takes the weekday from the server's clock and the hour from the tablet's.**
+45. **Reads are audited once a minute per person per patient.** Less precise than once per request; far more readable.
+46. **Open streams are held in memory,** so one server. A proxy must not buffer them (Phase 6).
+47. **A session's completion rate is derived** from whether she finished, left, or neither (1.0, 0.25, 0.6), because the envelope has no such number. The garden grows by it.
+48. **The journal entry leaves the tablet for the model provider** for one request. A real deployment's consent text must say so. The model's one-line gist is stored and shown to no one.
+49. **The reactive-ease stream still cannot authenticate** (an `EventSource`); its endpoints now sit on `/api/device` and the tablet does not yet read them with `fetch`. (Issue 33.)
+50. **Sessions queued by a version before this phase are dropped on the next sync.**
+51. **The family media path on the tablet was not exercised by the browser test:** no photograph or voice was uploaded through a screen.
 
 ## Files left untracked on purpose
 

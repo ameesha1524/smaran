@@ -195,13 +195,19 @@ class GrantsAndAuditIT extends ApiTest {
         assertEquals(404, status("GET", "/api/caregiver/dashboard/" + notShared.getId(), docToken));
 
         // Everything that is not the dashboard, report or trend is closed to her, shared patient or not.
-        for (String path : List.of("/api/patient/%s/profile", "/api/patient/%s/objects", "/api/family/%s/members",
-                "/api/garden/%s", "/api/game/%s/route", "/api/reminder/%s/schedule", "/api/patients/%s/devices",
-                "/api/patients/%s/audit", "/api/patients/%s/doctor-grants")) {
+        for (String path : List.of("/api/patients/%s/devices", "/api/patients/%s/audit",
+                "/api/patients/%s/doctor-grants")) {
             assertEquals(403, status("GET", path.formatted(shared.getId()), docToken), path);
         }
         assertEquals(403, status("POST", "/api/patients/" + shared.getId() + "/pairing-codes", docToken));
-        assertEquals(403, status("POST", "/api/session", docToken));
+        assertEquals(403, status("POST", "/api/patients/" + shared.getId() + "/alerts/x/acknowledge", docToken),
+                "acknowledging is the family's act");
+        // What she may read, she may read: the new views, but only as reads.
+        for (String path : List.of("/api/caregiver/patients/%s/timeseries", "/api/caregiver/patients/%s/sessions",
+                "/api/caregiver/patients/%s/alerts")) {
+            assertEquals(200, status("GET", path.formatted(shared.getId()), docToken), path);
+            assertEquals(404, status("GET", path.formatted(notShared.getId()), docToken), path);
+        }
     }
 
     /* -------------------------------------------------------------- audit */

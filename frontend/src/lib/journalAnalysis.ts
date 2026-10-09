@@ -5,7 +5,8 @@
  * A browser bundle cannot hold a secret: an API key shipped to the client is
  * readable by anyone who opens devtools, and these entries are a dementia
  * patient's private writing, which should not travel to a third party straight
- * from her tablet. The backend holds the key and makes the call.
+ * from her tablet. The backend holds the key, the prompt and the model, checks
+ * what comes back, and stores only the signals: never her words.
  *
  * The contract with the Journal screen is that this never throws. An entry is
  * worth keeping whether or not it was successfully read, so a failure here
@@ -14,34 +15,6 @@
 
 import type { LanguageCode, SentimentSignals } from './types'
 import { getDeviceToken } from './api'
-
-/**
- * The instruction the backend gives the model.
- *
- * Kept on this side so the prompt lives next to the type it must satisfy — if
- * the shape of `SentimentSignals` changes, the two are edited together. The
- * backend forwards it verbatim as the system prompt.
- */
-export const JOURNAL_SYSTEM_PROMPT = `You read short journal entries written by elderly people living with dementia in North East India, and report the emotional weather of each one.
-
-You are not a clinician and you are not diagnosing. You are helping a family member notice, over weeks, how their parent or grandparent is doing.
-
-Return ONLY a JSON object, no prose around it, with exactly these keys:
-
-{
-  "valence": number from -1 to 1, where -1 is bleak, 0 is even, 1 is bright,
-  "arousal": number from 0 to 1, where 0 is settled and calm, 1 is agitated or distressed,
-  "themes": array of 1-4 short lowercase noun phrases naming what the entry is actually about, drawn from the writer's own words where possible (e.g. "the garden", "my son", "the old house"),
-  "concernFlags": array containing only the values that genuinely apply, from: "CONFUSION", "DISTRESS", "LONELINESS", "PAIN". Use an empty array when none apply,
-  "summary": one warm sentence, written for the family member to read, describing how the writer seems today
-}
-
-Guidance:
-- Be conservative with concernFlags. A wistful memory is not DISTRESS. Missing someone who has died is not necessarily LONELINESS. Flag only what is plainly present in the text.
-- CONFUSION means disorientation in the writing itself (contradictory times, places or people), not the writer saying they felt confused about something ordinary.
-- The entry may be in English, Assamese, Manipuri (Meiteilon), Mizo, Hindi or Nagamese, or a mix. Read it in whatever language it arrives in, and always write "summary" in English.
-- Never quote a distressing line back in the summary. Describe, gently.
-- If the entry is too short or empty to read, return valence 0, arousal 0, empty arrays, and a summary saying there was not enough written to tell.`
 
 interface AnalyseResponse {
   signals?: unknown
@@ -78,11 +51,7 @@ export interface AnalyseInput {
   languageCode: LanguageCode
 }
 
-export async function analyseJournalEntry({
-  text,
-  patientId,
-  languageCode,
-}: AnalyseInput): Promise<SentimentSignals | null> {
+export async function analyseJournalEntry({ text }: AnalyseInput): Promise<SentimentSignals | null> {
   if (!text.trim()) return null
 
   try {
@@ -92,13 +61,9 @@ export async function analyseJournalEntry({
         'Content-Type': 'application/json',
         ...(getDeviceToken() ? { Authorization: `Bearer ${getDeviceToken()}` } : {}),
       },
-      body: JSON.stringify({
-        text,
-        patientId,
-        languageCode,
-        systemPrompt: JOURNAL_SYSTEM_PROMPT,
-        model: 'claude-sonnet-5',
-      }),
+      // Only her words and the hour on her own clock. The prompt and the model are the server's:
+      // a tablet cannot choose them, and the key never leaves the server.
+      body: JSON.stringify({ text, localHour: new Date().getHours() }),
     })
     if (!res.ok) return null
     const body = (await res.json()) as AnalyseResponse

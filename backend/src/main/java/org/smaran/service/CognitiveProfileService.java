@@ -201,26 +201,30 @@ public class CognitiveProfileService {
     /* ------------------------------------------------- update per session */
 
     /**
-     * Applied after every session. The session's readings go through the
-     * scoring engine, the one path that moves a domain level, and the 0–1
-     * domain scores are re-derived from the engine's levels.
+     * Keep the engine's state on the profile, and the 0–1 domain scores (routing,
+     * the report) re-derived from its levels. The scoring itself happens in
+     * {@link SessionIngestionService}, the one place a session reaches a profile.
      */
-    @Transactional
-    public CognitiveProfile updateFromSession(GameSession session) {
-        CognitiveProfile profile = forPatient(session.getPatientId());
-        CognitiveScoringService.Applied applied =
-                scoring.apply(profile.getScoringState(), scores(profile), readingsOf(session));
-        Map<String, Double> scores = applied.domainScores();
-
-        profile.setScoringState(scoring.write(applied.state()));
-        profile.setDomainScores(write(scores));
-        profile.setDerivedPeak(PeakWindow.forHour(
-                session.getStartedAt().atZone(ZoneId.systemDefault()).getHour()));
-        profile.setAnxietyThreshold(deriveAnxietyThreshold(session.getPatientId()));
-        profile.setSundowningPattern(detectSundowning(session.getPatientId()));
-        profile.setClusterAccuracy(write(recomputeClusters(session.getPatientId())));
+    public void storeState(CognitiveProfile profile, Map<String, TargetState> state) {
+        profile.setScoringState(scoring.write(state));
+        profile.setDomainScores(write(org.smaran.scoring.LegacyScores.domainScoresFrom(state, scores(profile))));
         profile.setUpdatedAt(Instant.now());
-        return profiles.save(profile);
+    }
+
+    /**
+     * The signals read from behaviour rather than from a score: when she plays
+     * best, how easily she is unsettled, whether the afternoons are harder, how
+     * she does with each group of objects. Refreshed after the latest session.
+     */
+    public void refreshDerived(CognitiveProfile profile, GameSession latest) {
+        int hour = latest.getHourOfDay() != null
+                ? latest.getHourOfDay()
+                : latest.getStartedAt().atZone(ZoneId.systemDefault()).getHour();
+        profile.setDerivedPeak(PeakWindow.forHour(hour));
+        profile.setAnxietyThreshold(deriveAnxietyThreshold(latest.getPatientId()));
+        profile.setSundowningPattern(detectSundowning(latest.getPatientId()));
+        profile.setClusterAccuracy(write(recomputeClusters(latest.getPatientId())));
+        profile.setUpdatedAt(Instant.now());
     }
 
     /* ------------------------------------------------------- the signals */
@@ -299,11 +303,33 @@ public class CognitiveProfileService {
     }
 
     /**
-     * The readings a stored session contributed. Sessions stored before
-     * readings existed fall back to completion rate against the game's
-     * primary domain — the same answer they gave at the time.
+     * The 0–1 readings a stored session contributed, per legacy domain name. For
+     * a session stored with an envelope they are its contributions to the six
+     * domains; for an older one, the readings it stored then.
      */
     public Map<String, DomainReading> readingsOf(GameSession session) {
+        if (session.getContributions() != null && !session.getContributions().isBlank()) {
+            Map<String, DomainReading> out = new LinkedHashMap<>();
+            try {
+                List<org.smaran.scoring.Contract.ScoreContribution> cs = json.readValue(
+                        session.getContributions(), new TypeReference<>() { });
+                org.smaran.scoring.LegacyScores.DOMAIN_ID_OF.forEach((legacy, id) -> cs.stream()
+                        .filter(c -> id.equals(c.target()))
+                        .findFirst()
+                        .ifPresent(c -> out.put(legacy, new DomainReading(c.raw() / 100d, c.confidence()))));
+                return CognitiveMap.sanitize(out);
+            } catch (Exception e) {
+                log.warn("unreadable contributions on {}, using legacy readings: {}", session.getId(), e.getMessage());
+            }
+        }
+        return legacyReadingsOf(session);
+    }
+
+    /**
+     * Sessions stored before the envelope existed fall back to completion rate
+     * against the game's primary domain, the same answer they gave at the time.
+     */
+    public Map<String, DomainReading> legacyReadingsOf(GameSession session) {
         Map<String, DomainReading> stored = null;
         String raw = session.getDomainReadings();
         if (raw != null && !raw.isBlank()) {

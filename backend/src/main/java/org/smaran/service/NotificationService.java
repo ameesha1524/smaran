@@ -1,11 +1,11 @@
 package org.smaran.service;
 
+import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.smaran.domain.AppUser;
 import org.smaran.domain.FamilyMember;
 import org.smaran.domain.Patient;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 
 /**
@@ -13,10 +13,12 @@ import org.springframework.stereotype.Service;
  *
  * Three channels, three very different tones:
  *
- *   · WebSocket to the family — "Ma's lotus bloomed 🌸". Delight, immediate.
- *   · FCM push to her tablet — a reminder, silent, with a photograph of the pill.
- *   · SMS to the caregiver — three missed days, a language regression, a motor
- *     variance spike. Never sent to the patient, never about a single bad day.
+ *   · the dashboard stream to the family: "her lotus bloomed". Delight, immediate.
+ *     This used to be an open WebSocket anyone could subscribe to; it is now the
+ *     same authorised event stream the dashboards use, so only people who may
+ *     read her dashboard hear it, and what they hear is an id, not a sentence.
+ *   · FCM push to her tablet: a reminder, silent, with a photograph of the pill.
+ *   · SMS to the caregiver: three missed days, never about a single bad day.
  *
  * FCM and Twilio are behind this one class deliberately. Both are swapped in by
  * adding the SDK and filling in the two marked methods; until then the calls are
@@ -26,7 +28,7 @@ import org.springframework.stereotype.Service;
 @Slf4j
 public class NotificationService {
 
-    private final SimpMessagingTemplate messaging;
+    private final DashboardEvents events;
 
     @Value("${smaran.notifications.fcm-key:}")
     private String fcmKey;
@@ -34,21 +36,13 @@ public class NotificationService {
     @Value("${smaran.notifications.twilio-sid:}")
     private String twilioSid;
 
-    public NotificationService(SimpMessagingTemplate messaging) {
-        this.messaging = messaging;
+    public NotificationService(DashboardEvents events) {
+        this.events = events;
     }
 
-    /**
-     * A bloom. Goes to every family member watching this patient's topic, in
-     * real time — this is the moment the co-op loop turns.
-     */
+    /** A bloom. Goes to every family member watching this patient's dashboard, in real time. */
     public void bloom(Patient patient, int bloomStage, boolean milestone) {
-        String message = milestone
-                ? "%s's garden reached a new stage 🌸".formatted(patient.getName())
-                : "%s's lotus bloomed 🌸".formatted(patient.getName());
-        messaging.convertAndSend(
-                "/topic/family/" + patient.getId(),
-                new BloomEvent(patient.getId(), bloomStage, milestone, message));
+        events.publish(patient.getId(), "bloom", Map.of("bloomStage", bloomStage, "milestone", milestone));
         log.info("bloom → family of {} (stage {}, milestone {})", patient.getId(), bloomStage, milestone);
     }
 
@@ -57,12 +51,7 @@ public class NotificationService {
      * five-second voice note — which is what she will hear next time.
      */
     public void recognised(Patient patient, FamilyMember member) {
-        messaging.convertAndSend(
-                "/topic/family/" + patient.getId(),
-                new RecognisedEvent(
-                        member.getId(),
-                        member.getName(),
-                        "%s knew you today. Would you record something for her?".formatted(patient.getName())));
+        events.publish(patient.getId(), "recognised", Map.of("memberId", member.getId()));
         log.info("recognition → {} ({} of {})", member.getName(), member.getRelationship(), patient.getId());
     }
 
@@ -88,11 +77,5 @@ public class NotificationService {
         }
         // TODO(pilot): Twilio Message.creator(...).create()
         log.info("sms → {}: {}", caregiver.getPhone(), message);
-    }
-
-    public record BloomEvent(String patientId, int bloomStage, boolean milestone, String message) {
-    }
-
-    public record RecognisedEvent(String memberId, String memberName, String message) {
     }
 }
