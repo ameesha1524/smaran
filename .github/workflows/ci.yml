@@ -66,6 +66,7 @@ jobs:
           cache: pip
           cache-dependency-path: data-science/requirements.txt
       - name: The data-science code runs on what the API exported
+        working-directory: ${{ github.workspace }}
         run: |
           pip install -r data-science/requirements.txt
           cd data-science

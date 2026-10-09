@@ -18,7 +18,7 @@ Outputs (`write_cohort`):
   contributions.csv  de-identified, one row per (session, domain), no ground truth
   sessions.csv       one row per session with the behavioural features
   ground_truth.csv   trajectory, onset day and rate per patient and domain (analysis only)
-  latent.csv.gz      true ability per patient, domain and day (analysis only; not committed)
+  latent.csv         true ability per patient, domain and day (analysis only; not committed for the full cohort)
 
 Run:  python src/simulate.py --out out/cohort [--small] [--n 200] [--seed ...]
 """
@@ -26,7 +26,6 @@ Run:  python src/simulate.py --out out/cohort [--small] [--n 200] [--seed ...]
 from __future__ import annotations
 
 import argparse
-import gzip
 import hashlib
 import json
 import math
@@ -471,7 +470,7 @@ def write_cohort(cohort: Cohort, out: Path, with_latent: bool = True) -> dict:
             for k, d in enumerate(DOMAIN_IDS):
                 rows.append(pd.DataFrame({"patient_idx": i, "domain": d, "day": np.arange(p.days), "latent": cohort.latent[i, :, k].round(3)}))
         text = pd.concat(rows).to_csv(index=False, lineterminator="\n")
-        (out / "latent.csv.gz").write_bytes(gzip.compress(text.encode("utf-8"), mtime=0))  # no timestamp: the same bytes every run
+        _text(out / "latent.csv", text)  # plain text: compressed bytes differ between platforms and zlib versions
     return meta
 
 
@@ -480,7 +479,7 @@ def load_cohort(directory: Path) -> Cohort:
     d = Path(directory)
     p = SimParams(**json.loads((d / "params.json").read_text(encoding="utf-8")))
     latent = np.zeros((p.n_patients, p.days, len(DOMAIN_IDS)))
-    lat = pd.read_csv(d / "latent.csv.gz")
+    lat = pd.read_csv(d / "latent.csv")
     for k, dom in enumerate(DOMAIN_IDS):
         part = lat[lat.domain == dom].sort_values(["patient_idx", "day"])
         latent[:, :, k] = part.latent.to_numpy().reshape(p.n_patients, p.days)
