@@ -1,0 +1,8 @@
+{
+  "seed": 20261009,
+  "n_patients": 200,
+  "days": 365,
+  "bootstrap_resamples": 1000,
+  "pmax_hat": 9.277351109194596,
+  "tau_hat": 10.0
+}

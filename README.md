@@ -61,7 +61,22 @@ game: `docs/ADDING_A_GAME.md`. To have journal entries read for how they feel, s
 `ANTHROPIC_API_KEY` for the backend; without it they are simply not read, and her words are
 never stored either way.
 
-Tests: `npm test` in `frontend/`, `mvn verify` in `backend/`.
+**The data-science layer** (`data-science/`, start with its `README.md`). A simulator makes a cohort whose
+ground truth is known, a Python port of the scoring engine (held to `golden-vectors.json`) replays it, and the alert
+rules are compared by how soon they catch a real decline and how often they cry wolf. `pip install -r
+data-science/requirements.txt`, then `make ds` writes every table and figure to `data-science/results/` (about
+ten minutes; `make ds-small` is the two-minute version CI runs). The cohort goes through the real ingestion
+service, so a demo dashboard can show it:
+
+```bash
+cd data-science && PYTHONPATH=src python src/simulate.py --out out/cohort        # envelopes.json and the rest
+cd ../backend && mvn spring-boot:test-run -Dspring-boot.run.main-class=org.smaran.LocalDevApplication     -Dspring-boot.run.arguments="--smaran.seed.cohort=file:../data-science/out/cohort/envelopes.json --smaran.seed.per-trajectory=1"
+```
+
+Sign in as `cohort@example.com` / `smaran`. An administrator can download the de-identified dataset
+(`GET /api/admin/export/sessions.csv`); `make ds-export` proves the evaluation code runs on what that returns.
+
+Tests: `npm test` in `frontend/`, `mvn verify` in `backend/`, `python -m pytest` in `data-science/`.
 
 Once paired, the PWA runs with **no backend at all**: every read falls back to
 the device cache, and every write queues in IndexedDB. That is not a demo

@@ -57,4 +57,11 @@ public final class Envelopes {
                 e.abandoned(), e.hourOfDay(), e.moodAtStart(), e.difficulty(), trials, e.contributions(), e.markers(),
                 e.precomputedReading(), e.engineVersion());
     }
+
+    public static SessionEnvelope withPrecomputed(SessionEnvelope e, boolean precomputed) {
+        return new SessionEnvelope(
+                e.clientSessionId(), e.patientId(), e.gameId(), e.startedAt(), e.durationMs(), e.completed(),
+                e.abandoned(), e.hourOfDay(), e.moodAtStart(), e.difficulty(), e.trials(), e.contributions(), e.markers(),
+                precomputed, e.engineVersion());
+    }
 }

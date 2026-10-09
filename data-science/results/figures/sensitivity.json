@@ -1,0 +1,7 @@
+{
+  "seed": 20261009,
+  "n_patients": 100,
+  "days": 365,
+  "bootstrap_resamples": 1000,
+  "budget": 2.0
+}

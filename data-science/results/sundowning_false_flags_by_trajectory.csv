@@ -1,0 +1,6 @@
+trajectory,evaluations,flag_rate
+fast_decline,570,0.0298
+improving,1007,0.0437
+single_domain,934,0.0696
+slow_decline,1089,0.0441
+stable,2414,0.058

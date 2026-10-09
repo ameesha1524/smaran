@@ -1,0 +1,2 @@
+what,pearson_r,lo,hi,clients,reading
+correlation between a client's first-round bias update and her true abandonment rate,0.9814,0.9761,0.9857,159,"one update, seen alone by the server, gives away how often she leaves sessions unfinished"

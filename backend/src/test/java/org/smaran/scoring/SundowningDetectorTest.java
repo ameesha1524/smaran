@@ -4,6 +4,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
@@ -99,5 +103,30 @@ class SundowningDetectorTest {
                 sittings("a", 9, 71, 71, 71, 71, 71, 71),
                 sittings("a", 17, 70, 70, 70, 70, 70, 70)));
         assertTrue(v.effectSize() < 0.8, "d = " + v.effectSize());
+    }
+
+    @Test
+    @DisplayName("the detector agrees with sundowning-vectors.json, which the Python evaluation is held to as well")
+    void sharedVectors() throws Exception {
+        Path file = Path.of("..", "sundowning-vectors.json");
+        assertTrue(Files.exists(file), "sundowning-vectors.json not found at " + file.toAbsolutePath());
+        JsonNode root = new ObjectMapper().readTree(Files.readString(file));
+        assertEquals(SundowningDetector.FLAG_AT, root.get("flagAt").asDouble(), 0.0);
+        assertEquals(SundowningDetector.END_BELOW, root.get("endBelow").asDouble(), 0.0);
+        assertEquals(SundowningDetector.MIN_PER_PART, root.get("minPerPart").asInt());
+        assertTrue(root.get("vectors").size() >= 12);
+        for (JsonNode v : root.get("vectors")) {
+            List<Sitting> in = new ArrayList<>();
+            for (JsonNode s : v.get("sittings")) {
+                in.add(new Sitting(s.get("gameId").asText(), s.get("hour").asInt(), s.get("score").asDouble()));
+            }
+            var got = SundowningDetector.evaluate(in);
+            JsonNode want = v.get("expected");
+            String name = v.get("name").asText();
+            assertEquals(want.get("enoughData").asBoolean(), got.enoughData(), name);
+            assertEquals(want.get("morning").asInt(), got.morning(), name);
+            assertEquals(want.get("lateAfternoon").asInt(), got.lateAfternoon(), name);
+            assertEquals(want.get("effectSize").asDouble(), got.effectSize(), 1e-9, name);
+        }
     }
 }

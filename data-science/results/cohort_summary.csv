@@ -1,0 +1,6 @@
+trajectory,patients,sundowners,sessions_per_patient_median,abandoned_share,stopped_early
+fast_decline,20,6,506.5,0.1211,1
+improving,30,5,463.0,0.0943,1
+single_domain,30,7,448.5,0.0912,3
+slow_decline,40,10,410.0,0.0968,2
+stable,80,11,414.0,0.0948,8
