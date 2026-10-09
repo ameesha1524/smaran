@@ -250,8 +250,8 @@ class GrantsAndAuditIT extends ApiTest {
 
         String device = deviceTokenFor(tokenFor(cg), p.getId());
         int before = jdbc.queryForObject("select count(*) from audit_event where patient_id = ?", Integer.class, p.getId());
-        status("GET", "/api/patient/" + p.getId() + "/profile", device);
-        status("GET", "/api/garden/" + p.getId(), device);
+        assertEquals(200, status("GET", "/api/device/me", device));
+        assertEquals(200, status("GET", "/api/device/garden", device));
         int after = jdbc.queryForObject("select count(*) from audit_event where patient_id = ?", Integer.class, p.getId());
         assertEquals(before, after, "the tablet's routine reads are not audited");
     }

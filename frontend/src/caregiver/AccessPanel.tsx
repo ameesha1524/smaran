@@ -25,6 +25,8 @@ const ACTION_WORDS: Record<string, string> = {
   GRANT_CREATED: 'shared her with a doctor',
   GRANT_REVOKED: 'stopped sharing with a doctor',
   PATIENT_CREATED: 'added her',
+  DEVICE_PAIRED: 'paired a tablet',
+  DEVICE_REVOKED: 'removed a tablet',
 }
 
 export default function AccessPanel({ patientId }: { patientId: string }) {

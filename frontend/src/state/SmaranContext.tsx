@@ -7,6 +7,7 @@ import type {
   LanguageCode,
   MoodKey,
   MotorTier,
+  DeviceMe,
   Patient,
   RedeemResult,
   SentimentSignals,
@@ -15,8 +16,11 @@ import type {
 } from '../lib/types'
 import { cacheGet, cacheSet, queueDepth } from '../lib/db'
 import {
+  clearSuspended,
+  device as deviceApi,
   garden as gardenApi,
   games as gamesApi,
+  getDeviceToken,
   lastSynced,
   patients,
   reminders as remindersApi,
@@ -24,6 +28,7 @@ import {
   submitSession,
   syncNow,
 } from '../lib/api'
+import { mustWipeBefore, readPairing, savePairing, wipeLocalData, type DevicePairingMeta } from '../lib/devicePairing'
 import { applyRest, emptyGarden, phaseFor, water } from '../lib/gardenEngine'
 import { deriveGameRoute, emptyProfile, tapTargetFor, updateProfile } from '../lib/cognitiveProfile'
 import { readingsFor, type ReadingHistoryEntry } from '../lib/cognitiveMap'
@@ -55,8 +60,14 @@ interface SmaranState {
    * journal's default input mode both hang off this.
    */
   motorTier: MotorTier
-  /** Has a caregiver ever set this device up? Nothing patient-facing runs before this. */
-  caregiverSetupComplete: boolean
+  /**
+   * Has this tablet been paired with a family's account? Nothing patient-facing
+   * runs before this. It stays true if the family later removes the tablet:
+   * she keeps her pond, and the tablet goes quiet.
+   */
+  devicePaired: boolean
+  /** An older version set this tablet up on its own, with no account. Pairing replaces that. */
+  legacyLocalSetup: boolean
   /** Has she confirmed the caregiver's language choice? Asked once, ever. */
   languageConfirmed: boolean
   /** Completed sessions. The first two are the onboarding, silently. */
@@ -68,14 +79,6 @@ interface SmaranState {
   devicePairing: DevicePairingMeta | null
 }
 
-/** What the tablet remembers about its own pairing. The token itself lives with the other tokens. */
-export interface DevicePairingMeta {
-  deviceId: string
-  patientId: string
-  pairedAt: string
-  expiresAt: string
-}
-
 interface SmaranActions {
   setLanguage(code: LanguageCode): void
   /** Softly, from the pond overlay or the journal — never a gate. */
@@ -84,12 +87,10 @@ interface SmaranActions {
   completeSession(result: SessionResultDraft): Promise<{ milestone: boolean }>
   setProfile(profile: CognitiveProfile): void
   setPatient(patch: Partial<Patient>): void
-  /** The caregiver hands the device over. Opens the patient side for the first time. */
-  completeCaregiverSetup(): void
   /**
-   * Take on the patient a redeemed pairing code belongs to: her record, her
-   * profile, and the device token. Also completes caregiver setup — the family
-   * did that part on their own phone.
+   * Take on the patient a redeemed pairing code belongs to: the device token,
+   * then her record and profile. If this tablet held anyone else's information,
+   * or cannot say whose it was, that is wiped first.
    */
   adoptPairing(result: RedeemResult): Promise<void>
   /** She confirms the language she is greeted in. Never unset afterwards. */
@@ -113,29 +114,32 @@ export function useSmaran(): Ctx {
 const PATIENT_KEY = 'patient'
 const PROFILE_KEY = 'profile'
 const MOOD_KEY = 'mood.today'
-const SETUP_KEY = 'smaran.caregiverSetupComplete'
+/** Set by versions before pairing, when the family set a tablet up on the tablet itself. Read, never written. */
+const LEGACY_SETUP_KEY = 'smaran.caregiverSetupComplete'
 const LANG_CONFIRMED_KEY = 'smaran.languageConfirmed'
 const SESSION_COUNT_KEY = 'smaran.sessionCount'
 const JOURNAL_KEY = 'smaran.journal'
 const VOICE_NOTES_KEY = 'smaran.voiceNotes'
 const STILL_KEY = 'smaran.stillness'
 const HISTORY_KEY = 'smaran.readingHistory'
-const PAIRING_KEY = 'smaran.devicePairing'
 
 /** Enough for the weakest-domain rule's seven-day window with room to spare. */
 const KEEP_HISTORY = 60
 const HISTORY_MAX_AGE_MS = 30 * 86_400_000
 
-function readPairing(): DevicePairingMeta | null {
-  try {
-    const raw = localStorage.getItem(PAIRING_KEY)
-    const parsed: unknown = raw ? JSON.parse(raw) : null
-    if (parsed && typeof parsed === 'object' && typeof (parsed as DevicePairingMeta).deviceId === 'string') {
-      return parsed as DevicePairingMeta
-    }
-    return null
-  } catch {
-    return null
+/** A tablet is told a first name, a language and how she is addressed; the rest arrives from /api/device/me. */
+function patientFrom(me: Pick<DeviceMe, 'patientId' | 'firstName' | 'languageCode' | 'kinshipTerm'> & Partial<DeviceMe>): Patient {
+  return {
+    ...demoPatient,
+    id: me.patientId,
+    name: me.firstName,
+    languageCode: me.languageCode,
+    kinshipTerm: me.kinshipTerm,
+    region: me.region ?? '',
+    peakWindow: me.peakWindow ?? demoPatient.peakWindow,
+    profileVersion: me.profileVersion ?? demoPatient.profileVersion,
+    faith: undefined,
+    caregiverId: undefined,
   }
 }
 
@@ -172,9 +176,8 @@ export function SmaranProvider({ children }: { children: ReactNode }) {
   const [online, setOnline] = useState<boolean>(() => navigator.onLine)
   const [pending, setPending] = useState(0)
   const [syncedAt, setSyncedAt] = useState<number | null>(null)
-  const [caregiverSetupComplete, setCaregiverSetupComplete] = useState(
-    () => localStorage.getItem(SETUP_KEY) === 'true',
-  )
+  const [devicePaired, setDevicePaired] = useState(() => getDeviceToken() !== null)
+  const [legacyLocalSetup] = useState(() => localStorage.getItem(LEGACY_SETUP_KEY) === 'true')
   const [languageConfirmed, setLanguageConfirmed] = useState(
     () => localStorage.getItem(LANG_CONFIRMED_KEY) === 'true',
   )
@@ -226,10 +229,10 @@ export function SmaranProvider({ children }: { children: ReactNode }) {
       const localGarden = await cacheGet<GardenState>(`garden:${id}`)
       if (alive && localGarden) setGardenState(applyRest(localGarden))
 
-      // Then the server, if it is there at all.
-      const fresh = await patients.profile(id).catch(() => undefined)
+      // Then the server, if this tablet is paired and it is there at all.
+      const fresh = getDeviceToken() ? await deviceApi.me().catch(() => undefined) : undefined
       if (alive && fresh) {
-        setPatientState(fresh)
+        setPatientState(patientFrom(fresh))
         setLanguageState(fresh.languageCode)
         if (fresh.cognitiveProfile) setProfileState(fresh.cognitiveProfile)
       }
@@ -261,6 +264,7 @@ export function SmaranProvider({ children }: { children: ReactNode }) {
   }, [patient.id])
 
   const doSync = useCallback(async () => {
+    if (!getDeviceToken()) return
     const outcome = await syncNow(patient.id)
     setPending(await queueDepth())
     if (outcome.ok) setSyncedAt(Date.now())
@@ -290,7 +294,7 @@ export function SmaranProvider({ children }: { children: ReactNode }) {
       const next = { ...patient, languageCode: code }
       setPatientState(next)
       void cacheSet(PATIENT_KEY, next)
-      void patients.update(patient.id, { languageCode: code }).catch(() => undefined)
+      if (getDeviceToken()) void deviceApi.setLanguage(code).catch(() => undefined)
     },
     [patient],
   )
@@ -387,39 +391,61 @@ export function SmaranProvider({ children }: { children: ReactNode }) {
     [setLanguage],
   )
 
-  const completeCaregiverSetup = useCallback(() => {
-    localStorage.setItem(SETUP_KEY, 'true')
-    setCaregiverSetupComplete(true)
+  const adoptPairing = useCallback(async (result: RedeemResult) => {
+    const next = result.patient
+
+    // Whose information is on this tablet? If it is not certainly hers, it goes
+    // before anything of hers arrives (see lib/devicePairing.ts).
+    if (mustWipeBefore(readPairing(), next.patientId)) {
+      await wipeLocalData()
+      const blank = emptyProfile(next.patientId)
+      profileRef.current = blank
+      gardenRef.current = emptyGarden(next.patientId)
+      setProfileState(blank)
+      setGardenState(gardenRef.current)
+      setMoodToday(null)
+      setPending(0)
+      setSyncedAt(null)
+      setSessionCount(0)
+      setJournalEntries([])
+      setCaregiverVoiceNotes([])
+      setReadingHistory([])
+      setStillnessState(false)
+      setLanguageConfirmed(false)
+    }
+
+    // A device token never refreshes: the family removes it rather than it
+    // expiring under her. Setting it ends any earlier suspension.
+    setDeviceToken(result.deviceToken)
+    clearSuspended()
+    const meta: DevicePairingMeta = {
+      deviceId: result.deviceId,
+      patientId: next.patientId,
+      pairedAt: new Date().toISOString(),
+    }
+    savePairing(meta)
+    setDevicePairing(meta)
+    setDevicePaired(true)
+
+    // What the bundle says now; the rest of her record follows from the server.
+    const record = patientFrom(next)
+    setPatientState(record)
+    setLanguageState(record.languageCode)
+    await cacheSet(PATIENT_KEY, record)
+
+    const me = await deviceApi.me().catch(() => undefined)
+    if (me) {
+      const full = patientFrom(me)
+      setPatientState(full)
+      setLanguageState(full.languageCode)
+      await cacheSet(PATIENT_KEY, full)
+      if (me.cognitiveProfile) {
+        profileRef.current = me.cognitiveProfile
+        setProfileState(me.cognitiveProfile)
+        await cacheSet(PROFILE_KEY, me.cognitiveProfile)
+      }
+    }
   }, [])
-
-  const adoptPairing = useCallback(
-    async (result: RedeemResult) => {
-      // A device token never refreshes: it is long-lived by design, and the
-      // family revokes it rather than it expiring under her.
-      setDeviceToken(result.deviceToken)
-
-      const { cognitiveProfile, ...record } = result.patient
-      setPatientState(record)
-      setLanguageState(record.languageCode)
-      await cacheSet(PATIENT_KEY, record)
-      if (cognitiveProfile) {
-        profileRef.current = cognitiveProfile
-        setProfileState(cognitiveProfile)
-        await cacheSet(PROFILE_KEY, cognitiveProfile)
-      }
-
-      const meta: DevicePairingMeta = {
-        deviceId: result.deviceId,
-        patientId: result.patientId,
-        pairedAt: new Date().toISOString(),
-        expiresAt: result.expiresAt,
-      }
-      localStorage.setItem(PAIRING_KEY, JSON.stringify(meta))
-      setDevicePairing(meta)
-      completeCaregiverSetup()
-    },
-    [completeCaregiverSetup],
-  )
 
   const addJournalEntry = useCallback((text: string, signals: SentimentSignals | null): JournalEntry => {
     const entry: JournalEntry = {
@@ -507,7 +533,8 @@ export function SmaranProvider({ children }: { children: ReactNode }) {
     pending,
     syncedAt,
     motorTier: profile.motorTier,
-    caregiverSetupComplete,
+    devicePaired,
+    legacyLocalSetup,
     languageConfirmed,
     sessionCount,
     journalEntries,
@@ -519,7 +546,6 @@ export function SmaranProvider({ children }: { children: ReactNode }) {
     completeSession,
     setProfile,
     setPatient,
-    completeCaregiverSetup,
     adoptPairing,
     confirmLanguage,
     addJournalEntry,

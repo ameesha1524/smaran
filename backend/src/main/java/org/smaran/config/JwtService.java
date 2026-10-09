@@ -24,9 +24,8 @@ import org.springframework.stereotype.Service;
  * about which patients they may see. That is looked up on every request by
  * AccessGuard, so a token cannot outlive a change of access.
  *
- * The patient's own tablet holds a long-lived token too, because a locked-out
- * dementia patient cannot recover an account — and everything on that device is
- * useless without the device anyway.
+ * A tablet does not use these. It holds an opaque device token, kept as a hash
+ * and checked against the database on every request (see DeviceService).
  */
 @Service
 public class JwtService {
@@ -49,27 +48,6 @@ public class JwtService {
                 .claim("patients", patientIds)
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(now.plus(accessTtl)))
-                .signWith(key)
-                .compact();
-    }
-
-    /**
-     * The tablet's token, minted once when a pairing code is redeemed.
-     *
-     * It carries the PATIENT role scoped to exactly one patient, and a
-     * {@code did} claim naming the pairing row, so that the family removing the
-     * tablet ends its access on the next request (see JwtAuthFilter). It is
-     * never refreshed: it lasts until it expires or is removed.
-     */
-    public String issueDevice(String patientId, String deviceId, Instant expiresAt) {
-        return Jwts.builder()
-                .subject(patientId)
-                .claim("role", "PATIENT")
-                .claim("patients", List.of(patientId))
-                .claim("did", deviceId)
-                .claim("typ", "device")
-                .issuedAt(Date.from(Instant.now()))
-                .expiration(Date.from(expiresAt))
                 .signWith(key)
                 .compact();
     }

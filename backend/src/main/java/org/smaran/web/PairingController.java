@@ -4,10 +4,9 @@ import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import org.smaran.config.AccessGuard;
 import org.smaran.config.AccessGuard.Capability;
-import org.smaran.domain.CognitiveProfile;
 import org.smaran.domain.Patient;
 import org.smaran.repo.PatientRepository;
-import org.smaran.service.CognitiveProfileService;
+import org.smaran.service.DeviceService;
 import org.smaran.service.PairingService;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -21,88 +20,67 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
 /**
- * Pairing a tablet — the endpoints from docs/rbac-architecture.md §6.
+ * Pairing a tablet.
  *
- * The family side (issue a code, list and remove tablets) needs the CAREGIVE
- * capability on the patient: their owner, or an admin. A doctor can see
- * a patient but cannot put a device in her hands, and a patient's own tablet
- * certainly cannot mint codes for more tablets.
+ * The family side (mint a code, list and remove tablets) needs the CAREGIVE
+ * capability on the patient: their owner, or an admin. A doctor can read a
+ * patient but cannot put a device in her hands, and a tablet cannot mint codes
+ * for more tablets.
  *
- * The tablet side (redeem) is unauthenticated by necessity; the code is the
+ * The tablet side (redeem) is unauthenticated by necessity: the code is the
  * credential, and PairingService single-uses and rate-limits it.
+ *
+ * The family-side paths stay under {@code /api/patients/{id}} with the rest of
+ * a patient's access controls; the prompt's {@code /api/caregiver/patients}
+ * spelling would fall under the dashboard's URL rule, which doctors also pass.
  */
 @RestController
 @RequestMapping("/api")
 public class PairingController {
 
     private final PairingService pairing;
+    private final DeviceService devices;
     private final PatientRepository patients;
-    private final CognitiveProfileService profiles;
     private final AccessGuard guard;
 
     public PairingController(
-            PairingService pairing,
-            PatientRepository patients,
-            CognitiveProfileService profiles,
-            AccessGuard guard) {
+            PairingService pairing, DeviceService devices, PatientRepository patients, AccessGuard guard) {
         this.pairing = pairing;
+        this.devices = devices;
         this.patients = patients;
-        this.profiles = profiles;
         this.guard = guard;
     }
 
     @PostMapping("/patients/{patientId}/pairing-codes")
     public Dto.PairingCodeDto issue(@PathVariable String patientId) {
-        String actor = requireMayPair(patientId);
-        PairingService.IssuedCode code = pairing.issueCode(patientId, actor);
+        String actor = guard.require(patientId, Capability.CAREGIVE).userId();
+        // The dev-only open demo has no accounts, and a code's author is a foreign key to one.
+        PairingService.IssuedCode code = pairing.issueCode(patientId, guard.isOpenDemo() ? null : actor);
         return new Dto.PairingCodeDto(code.code(), code.expiresAt());
     }
 
     @GetMapping("/patients/{patientId}/devices")
     public List<Dto.DeviceDto> devices(@PathVariable String patientId) {
-        requireMayPair(patientId);
-        return pairing.devices(patientId).stream()
-                .map(d -> new Dto.DeviceDto(
-                        d.getId(), d.getDeviceLabel(), d.getRedeemedAt(), d.getLastSeenAt(), d.getTokenExpiresAt()))
+        guard.require(patientId, Capability.CAREGIVE);
+        return devices.forPatient(patientId).stream()
+                .map(d -> new Dto.DeviceDto(d.getId(), d.getLabel(), d.getPairedAt(), d.getLastSeenAt(), d.getExpiresAt()))
                 .toList();
     }
 
+    /** Removes the tablet's way in. None of her information is deleted. */
     @DeleteMapping("/patients/{patientId}/devices/{deviceId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void revoke(@PathVariable String patientId, @PathVariable String deviceId) {
-        requireMayPair(patientId);
-        pairing.revoke(patientId, deviceId);
+        String actor = guard.require(patientId, Capability.CAREGIVE).userId();
+        devices.revoke(patientId, deviceId, actor);
     }
 
-    @PostMapping("/devices/redeem")
+    @PostMapping("/pairing/redeem")
     public Dto.RedeemResponse redeem(@RequestBody Dto.RedeemRequest body, HttpServletRequest request) {
-        PairingService.Redemption r = pairing.redeem(body.code(), body.deviceLabel(), request.getRemoteAddr());
-
-        // The tablet takes on her record and profile in the same response, so
-        // it opens straight into her pond without a second round trip.
+        PairingService.Redemption r =
+                pairing.redeem(body.code(), body.deviceLabel(), body.deviceFingerprint(), request.getRemoteAddr());
         Patient patient = patients.findById(r.patientId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
-        CognitiveProfile profile = profiles.forPatient(r.patientId());
-        Dto.PatientDto dto = new Dto.PatientDto(
-                patient.getId(),
-                patient.getName(),
-                patient.getLanguageCode(),
-                patient.getKinshipTerm(),
-                patient.getRegion(),
-                patient.getFaith(),
-                patient.getPeakWindow(),
-                patient.getProfileVersion(),
-                patient.getCaregiverId(),
-                profiles.toDto(profile));
-        return new Dto.RedeemResponse(r.deviceToken(), r.deviceId(), r.patientId(), r.expiresAt(), dto);
-    }
-
-    /**
-     * Pairing is a caregiving act: the owner or an admin, never a doctor and never
-     * a tablet. The guard answers 403 for the wrong kind of user and 404 for a
-     * patient that is not theirs.
-     */
-    private String requireMayPair(String patientId) {
-        return guard.require(patientId, Capability.CAREGIVE).userId();
+        return new Dto.RedeemResponse(r.deviceToken(), r.deviceId(), DeviceController.bundleOf(patient));
     }
 }

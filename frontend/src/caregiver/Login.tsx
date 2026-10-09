@@ -90,6 +90,9 @@ export default function Login() {
         </button>
       )}
 
+      <Link to="/pair" className="font-sans underline" style={{ fontSize: 14, color: 'var(--chalk-dim)', opacity: 0.8 }}>
+        Pairing a tablet?
+      </Link>
       <Link to="/" className="font-sans underline" style={{ fontSize: 14, color: 'var(--chalk-dim)', opacity: 0.6 }}>
         Back to the pond
       </Link>

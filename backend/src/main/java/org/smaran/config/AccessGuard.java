@@ -39,6 +39,8 @@ import org.springframework.web.server.ResponseStatusException;
  * a patient takes effect on the next call, and a token cannot carry a stale
  * list. A tablet is the one exception: its token names its one patient, and
  * JwtAuthFilter confirms on every request that the tablet has not been removed.
+ * A tablet never passes {@link #require}; it has its own endpoints under
+ * /api/device, which use {@link #requireDevice}.
  *
  * Every decision by a person (not a tablet) is written to the audit log.
  */
@@ -105,12 +107,31 @@ public class AccessGuard {
         return principal;
     }
 
+    /**
+     * For /api/device/**: the caller must be a paired tablet, and the patient is
+     * whichever one it was paired to. There is no patient id to pass, so there is
+     * nothing for a tablet to get wrong or to point at someone else.
+     *
+     * @return the tablet's principal; {@code patientIds().get(0)} is her
+     */
+    public SmaranPrincipal requireDevice() {
+        SmaranPrincipal principal = current();
+        if (principal == null) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
+        }
+        if (!"DEVICE".equals(principal.role()) || principal.patientIds().size() != 1) {
+            denied(principal, null, null, "not-a-device");
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN);
+        }
+        return principal;
+    }
+
     /** The role part of the rule, with no patient involved. */
     static boolean roleMayDo(String role, Capability capability) {
         return switch (role == null ? "" : role) {
             case "ADMIN", "CAREGIVER" -> true;
             case "DOCTOR" -> capability == Capability.CLINICAL_READ && isReadRequest();
-            case "PATIENT" -> capability == Capability.PLAY;
+            // A tablet has its own endpoints under /api/device and no business anywhere else.
             default -> false;
         };
     }
@@ -121,7 +142,6 @@ public class AccessGuard {
             case "ADMIN" -> patients.existsById(patientId);
             case "CAREGIVER" -> patients.existsByIdAndCaregiverId(patientId, principal.userId());
             case "DOCTOR" -> grants.existsLive(patientId, principal.userId(), clock.instant());
-            case "PATIENT" -> principal.patientIds().contains(patientId);
             default -> false;
         };
     }
@@ -162,7 +182,7 @@ public class AccessGuard {
 
     private void denied(SmaranPrincipal principal, String patientId, Capability capability, String why) {
         audit.record(actorOf(principal.role()), principal.userId(), "ACCESS_DENIED", patientId, resource(), ip(),
-                Map.of("capability", capability.name(), "why", why));
+                capability == null ? Map.of("why", why) : Map.of("capability", capability.name(), "why", why));
     }
 
     static Actor actorOf(String role) {
@@ -170,7 +190,7 @@ public class AccessGuard {
             case "ADMIN" -> Actor.ADMIN;
             case "CAREGIVER" -> Actor.CAREGIVER;
             case "DOCTOR" -> Actor.DOCTOR;
-            case "PATIENT" -> Actor.DEVICE;
+            case "DEVICE" -> Actor.DEVICE;
             default -> Actor.ANONYMOUS;
         };
     }

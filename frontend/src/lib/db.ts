@@ -9,13 +9,14 @@
  *   family_members    patientId                cached family list + phases
  *   cache             key                      profile, route, objects, reminders
  *   sync_meta         patientId                last sync timestamp, queue depth
+ *   device_meta       key                      this tablet's own random id; survives a wipe
  *
  * Everything here is plain IndexedDB on purpose: one less dependency to fail to
  * install on a low-end Android tablet.
  */
 
 const DB_NAME = 'smaran'
-const DB_VERSION = 1
+const DB_VERSION = 2
 
 export type StoreName =
   | 'pending_sessions'
@@ -25,6 +26,7 @@ export type StoreName =
   | 'family_members'
   | 'cache'
   | 'sync_meta'
+  | 'device_meta'
 
 let dbPromise: Promise<IDBDatabase> | null = null
 
@@ -58,6 +60,9 @@ function openDb(): Promise<IDBDatabase> {
       }
       if (!db.objectStoreNames.contains('sync_meta')) {
         db.createObjectStore('sync_meta', { keyPath: 'patientId' })
+      }
+      if (!db.objectStoreNames.contains('device_meta')) {
+        db.createObjectStore('device_meta', { keyPath: 'key' })
       }
     }
     req.onsuccess = () => resolve(req.result)
@@ -133,4 +138,33 @@ export async function queueDepth(): Promise<number> {
     getAll('pending_blooms'),
   ])
   return s.length + v.length + b.length
+}
+
+/** Everything about a patient. The tablet's own id is not about a patient and is kept. */
+const PATIENT_STORES: StoreName[] = [
+  'pending_sessions',
+  'pending_vectors',
+  'pending_blooms',
+  'garden_state',
+  'family_members',
+  'cache',
+  'sync_meta',
+]
+
+/** Forget one patient entirely, before a tablet is handed to another. */
+export async function clearPatientData(): Promise<void> {
+  for (const store of PATIENT_STORES) await clear(store)
+}
+
+/**
+ * The random id this tablet made for itself the first time it ran. It lets the
+ * server limit guessing per tablet, and tells the family which tablet is which.
+ * It identifies a device, not a person, and is not secret.
+ */
+export async function getDeviceFingerprint(): Promise<string> {
+  const row = await get<{ key: string; value: string }>('device_meta', 'fingerprint')
+  if (row?.value) return row.value
+  const value = crypto.randomUUID()
+  await put('device_meta', { key: 'fingerprint', value })
+  return value
 }

@@ -13,7 +13,7 @@
  */
 
 import type { LanguageCode, SentimentSignals } from './types'
-import { currentBearer } from './api'
+import { getDeviceToken } from './api'
 
 /**
  * The instruction the backend gives the model.
@@ -86,11 +86,11 @@ export async function analyseJournalEntry({
   if (!text.trim()) return null
 
   try {
-    const res = await fetch('/api/journal/analyse', {
+    const res = await fetch('/api/device/journal/analyse', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(currentBearer() ? { Authorization: `Bearer ${currentBearer()}` } : {}),
+        ...(getDeviceToken() ? { Authorization: `Bearer ${getDeviceToken()}` } : {}),
       },
       body: JSON.stringify({
         text,

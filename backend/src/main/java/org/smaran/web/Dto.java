@@ -297,19 +297,36 @@ public final class Dto {
 
     /* ---------------------------------------------------------- pairing */
 
-    /** The code is returned once, formatted {@code XXXX-XXXX}; only its hash is stored. */
+    /** The code is returned once, formatted {@code HJ4K-2M}; only a hash of it is stored. */
     public record PairingCodeDto(String code, Instant expiresAt) {
     }
 
-    public record RedeemRequest(String code, String deviceLabel) {
+    /** {@code deviceFingerprint} is the random id the tablet made for itself; it keeps one client from guessing alone. */
+    public record RedeemRequest(String code, String deviceLabel, String deviceFingerprint) {
     }
 
-    public record RedeemResponse(
-            String deviceToken,
-            String deviceId,
+    /** Everything the tablet is told when it pairs. The rest it asks for with its new token. */
+    public record RedeemResponse(String deviceToken, String deviceId, DeviceBundle patient) {
+    }
+
+    /** The least a tablet needs to greet her: a first name, a language and how she is addressed. */
+    public record DeviceBundle(String patientId, String firstName, String languageCode, String kinshipTerm) {
+    }
+
+    /** What a paired tablet sees of its own patient. No surname, no owner, no other family. */
+    public record DeviceMe(
             String patientId,
-            Instant expiresAt,
-            PatientDto patient) {
+            String firstName,
+            String languageCode,
+            String kinshipTerm,
+            String region,
+            PeakWindow peakWindow,
+            String profileVersion,
+            CognitiveProfileDto cognitiveProfile) {
+    }
+
+    /** All a tablet may change about its patient: the language she chooses to be greeted in. */
+    public record DeviceMePatch(String languageCode) {
     }
 
     public record DeviceDto(String id, String label, Instant pairedAt, Instant lastSeenAt, Instant expiresAt) {

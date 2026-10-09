@@ -39,7 +39,7 @@ const TABS: { key: Tab; label: string }[] = [
 const CLUSTERS: SemanticCluster[] = ['MUSICAL', 'NATURE', 'DAILY_LIFE', 'CRAFT', 'FOOD']
 
 export default function Setup() {
-  const { patient, setPatient, setStillness, stillness, caregiverSetupComplete, completeCaregiverSetup } = useSmaran()
+  const { patient, setPatient, setStillness, stillness } = useSmaran()
   const [tab, setTab] = useState<Tab>('patient')
   const [saved, setSaved] = useState<string | null>(null)
 
@@ -64,20 +64,18 @@ export default function Setup() {
             <Link to="/caregiver/dashboard" className="pill stone" style={{ padding: '10px 20px', fontSize: 16 }}>
               Dashboard
             </Link>
-            {/* Until this is pressed once, the patient side redirects back here:
-                she should never meet a pond that does not know her name. */}
+            {/* The tablet reaches her pond by being paired, not by this screen. */}
             <Link
-              to="/"
-              onClick={completeCaregiverSetup}
+              to="/pair"
               className="pill"
               style={{
                 padding: '10px 20px',
                 fontSize: 16,
-                background: caregiverSetupComplete ? undefined : 'var(--olive-continue)',
+                background: 'var(--olive-continue)',
                 border: '1px solid rgba(221,234,248,0.16)',
               }}
             >
-              {caregiverSetupComplete ? 'Her sanctuary' : 'Hand it to her'}
+              Pair this tablet
             </Link>
           </div>
         </header>

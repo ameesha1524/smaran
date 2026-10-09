@@ -43,12 +43,21 @@ accounts, all with the password `smaran`: `rupa@example.com` (family),
 `admin@example.com` (administrator). They exist in no other profile.
 All data in this repository is synthetic.
 
+**Pairing a tablet** (the patient's side). Sign in as the family, open the
+dashboard, and under **Her tablet** press *Get a pairing code*. It looks like
+`HJ4K-2M`, works once and lasts three days. On the tablet (a second browser
+profile works), open the app: it asks for the code at `/pair`. Once paired it
+opens her pond, and the family sees the tablet listed, with *Remove* beside it.
+Removing it ends its access on its next request and deletes none of her data.
+`python e2e/phase3_pairing_flow.py` drives this end to end (header explains the
+set-up).
+
 Tests: `npm test` in `frontend/`, `mvn verify` in `backend/`.
 
-The PWA also runs with **no backend at all**: every read falls back to the
-device cache and then to seeded demo content, and every write queues in
-IndexedDB. That is not a demo affordance — it is the same path a tablet takes in
-a village with no signal for three days.
+Once paired, the PWA runs with **no backend at all**: every read falls back to
+the device cache, and every write queues in IndexedDB. That is not a demo
+affordance — it is the same path a tablet takes in a village with no signal for
+three days. Pairing is the one thing that needs the server, once.
 
 ### The full stack
 

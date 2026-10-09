@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
  * so no server and no browser is needed.
  */
 
-type Call = { url: string; auth: string | null }
+type Call = { url: string; auth: string | null; body: string | null }
 
 function installStorage() {
   const store = new Map<string, string>()
@@ -26,7 +26,7 @@ function installFetch(handlers: Record<string, (call: Call, n: number) => Respon
     'fetch',
     vi.fn(async (url: string, init: RequestInit = {}) => {
       const headers = (init.headers ?? {}) as Record<string, string>
-      const call = { url, auth: headers.Authorization ?? null }
+      const call = { url, auth: headers.Authorization ?? null, body: typeof init.body === 'string' ? init.body : null }
       calls.push(call)
       const key = Object.keys(handlers).find((k) => url.startsWith(k))
       if (!key) throw new Error(`unexpected request to ${url}`)
@@ -74,26 +74,36 @@ describe('where credentials live', () => {
     expect(store.size).toBe(0)
   })
 
-  it('a tablet’s device token is kept in storage and used when no one is signed in', async () => {
-    const calls = installFetch({ '/api/patient/': () => json(200, { ok: true }) })
-    const { setDeviceToken, patients } = await freshApi()
+  it('a tablet’s device token is kept in storage and sent to the tablet’s own endpoints', async () => {
+    const calls = installFetch({ '/api/device/me': () => json(200, { patientId: 'p1' }) })
+    const { setDeviceToken, device } = await freshApi()
     setDeviceToken('device-1')
     expect(store.get('smaran.deviceToken')).toBe('device-1')
-    await patients.profile('p1')
+    await device.me()
     expect(calls[0].auth).toBe('Bearer device-1')
   })
 
-  it('a signed-in person’s token wins over the tablet’s', async () => {
-    installFetch({ '/api/auth/login': () => json(200, session('access-1')), '/api/patients': () => json(200, []) })
+  it('a person’s calls and a tablet’s calls never share a credential', async () => {
     const calls = installFetch({
       '/api/auth/login': () => json(200, session('access-1')),
       '/api/patients': () => json(200, []),
+      '/api/device/me': () => json(200, { patientId: 'p1' }),
     })
-    const { auth, setDeviceToken, patients } = await freshApi()
+    const { auth, setDeviceToken, patients, device } = await freshApi()
     setDeviceToken('device-1')
     await auth.login('a@example.com', 'a-long-password')
     await patients.mine()
-    expect(calls.at(-1)?.auth).toBe('Bearer access-1')
+    await device.me()
+    expect(calls.find((c) => c.url === '/api/patients')?.auth).toBe('Bearer access-1')
+    expect(calls.find((c) => c.url === '/api/device/me')?.auth).toBe('Bearer device-1')
+  })
+
+  it('a person who is not signed in sends no credential, even on a tablet that holds one', async () => {
+    const calls = installFetch({ '/api/patients': () => new Response(null, { status: 401 }) })
+    const { setDeviceToken, patients } = await freshApi()
+    setDeviceToken('device-1')
+    await expect(patients.mine()).rejects.toMatchObject({ status: 401 })
+    expect(calls[0].auth).toBeNull()
   })
 
   it('a tablet paired under the old storage name keeps working', async () => {
@@ -138,11 +148,11 @@ describe('renewing a session', () => {
     expect(calls.filter((c) => c.url === '/api/auth/refresh')).toHaveLength(1)
   })
 
-  it('a tablet is never renewed: a 401 for its token is just a refusal', async () => {
-    const calls = installFetch({ '/api/patients': () => new Response(null, { status: 401 }) })
-    const { setDeviceToken, patients, HttpError } = await freshApi()
+  it('a tablet is never renewed: a refusal of its token is never answered with a refresh', async () => {
+    const calls = installFetch({ '/api/device/me': () => new Response(null, { status: 401 }) })
+    const { setDeviceToken, device } = await freshApi()
     setDeviceToken('device-1')
-    await expect(patients.mine()).rejects.toBeInstanceOf(HttpError)
+    await device.me()
     expect(calls.some((c) => c.url === '/api/auth/refresh')).toBe(false)
   })
 
@@ -201,5 +211,142 @@ describe('what a refusal looks like', () => {
     }))
     const { caregiver } = await freshApi()
     expect(await caregiver.dashboard('p1')).toEqual({ kind: 'offline' })
+  })
+})
+
+describe('a tablet the family has removed', () => {
+  it('goes quiet: no error reaches her, it keeps what it has, and it stops asking', async () => {
+    const calls = installFetch({ '/api/device/': () => new Response(null, { status: 401 }) })
+    const { setDeviceToken, device, deviceSuspended } = await freshApi()
+    setDeviceToken('device-1')
+
+    // The refusal is reported as "no answer", so the caller falls back to its copy.
+    await expect(device.me()).resolves.toBeUndefined()
+    expect(deviceSuspended()).toBe(true)
+    expect(calls).toHaveLength(1)
+
+    await device.me()
+    await device.me()
+    expect(calls, 'no further requests while suspended').toHaveLength(1)
+  })
+
+  it('a refusal on any device endpoint, 401 or 403, is silent', async () => {
+    for (const status of [401, 403]) {
+      installFetch({ '/api/device/': () => new Response(null, { status }) })
+      const { setDeviceToken, submitSession, deviceSuspended } = await freshApi()
+      setDeviceToken('device-1')
+      store.delete('smaran.deviceSuspendedAt')
+      const outcome = await submitSession({ patientId: 'p1', gameType: 'KOI_ARE_JUMPING', startedAt: 'x' } as never)
+      expect(outcome.queued, `a ${status} queues the session`).toBe(true)
+      expect(deviceSuspended()).toBe(true)
+    }
+  })
+
+  it('asks again after an hour, and a good answer ends the suspension', async () => {
+    vi.useFakeTimers()
+    try {
+      let allowed = false
+      const calls = installFetch({
+        '/api/device/me': () => (allowed ? json(200, { patientId: 'p1' }) : new Response(null, { status: 401 })),
+      })
+      const { setDeviceToken, device, deviceSuspended } = await freshApi()
+      setDeviceToken('device-1')
+      await device.me()
+      expect(deviceSuspended()).toBe(true)
+
+      vi.advanceTimersByTime(59 * 60_000)
+      await device.me()
+      expect(calls).toHaveLength(1)
+
+      allowed = true
+      vi.advanceTimersByTime(2 * 60_000)
+      await expect(device.me()).resolves.toMatchObject({ patientId: 'p1' })
+      expect(calls).toHaveLength(2)
+      expect(deviceSuspended()).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('pairing again clears the suspension', async () => {
+    installFetch({ '/api/device/': () => new Response(null, { status: 401 }) })
+    const { setDeviceToken, clearSuspended, device, deviceSuspended } = await freshApi()
+    setDeviceToken('device-1')
+    await device.me()
+    expect(deviceSuspended()).toBe(true)
+    clearSuspended()
+    expect(deviceSuspended()).toBe(false)
+  })
+
+  it('an unpaired tablet makes no request at all', async () => {
+    const calls = installFetch({})
+    const { device, submitSession } = await freshApi()
+    await device.me()
+    await submitSession({ patientId: 'p1', gameType: 'KOI_ARE_JUMPING', startedAt: 'x' } as never)
+    expect(calls).toHaveLength(0)
+  })
+})
+
+describe('the tablet’s endpoints name no patient', () => {
+  it('sessions, garden, family and reminders all go to /api/device/**', async () => {
+    const calls = installFetch({ '/api/device/': () => json(200, []) })
+    const { setDeviceToken, submitSession, garden, family, reminders, games } = await freshApi()
+    setDeviceToken('device-1')
+    await submitSession({ patientId: 'p1', gameType: 'KOI_ARE_JUMPING', startedAt: 'x' } as never)
+    await garden.state('p1')
+    await family.members('p1')
+    await reminders.schedule('p1')
+    await games.route('p1')
+    await games.objects('p1')
+    expect(calls.map((c) => c.url)).toEqual([
+      '/api/device/sessions',
+      '/api/device/garden',
+      '/api/device/family/members',
+      '/api/device/reminders',
+      '/api/device/game/route',
+      '/api/device/objects',
+    ])
+    expect(calls.every((c) => c.auth === 'Bearer device-1')).toBe(true)
+    expect(calls.some((c) => c.url.includes('p1'))).toBe(false)
+  })
+})
+
+describe('redeeming a code', () => {
+  it('carries no credential, even if a person is signed in, and names the tablet by its own random id', async () => {
+    const calls = installFetch({
+      '/api/auth/login': () => json(200, session('access-1')),
+      '/api/pairing/redeem': () =>
+        json(200, { deviceToken: 'sdt_x', deviceId: 'd1', patient: { patientId: 'p1', firstName: 'Meera', languageCode: 'en', kinshipTerm: 'Aaita' } }),
+    })
+    const { auth, pairing } = await freshApi()
+    await auth.login('a@example.com', 'a-long-password')
+    const result = await pairing.redeem('HJ4K2M', 'Living room')
+    expect(result.patient.firstName).toBe('Meera')
+
+    const call = calls.find((c) => c.url === '/api/pairing/redeem')!
+    expect(call.auth).toBeNull()
+    const body = JSON.parse(call.body ?? '{}') as Record<string, string>
+    expect(body.code).toBe('HJ4K2M')
+    expect(body.deviceLabel).toBe('Living room')
+    expect(body.deviceFingerprint).toMatch(/^[0-9a-f-]{36}$/)
+  })
+
+  it('turns the server’s answers into reasons a screen can explain', async () => {
+    const answers: Record<number, string> = { 404: 'invalid', 400: 'invalid', 429: 'rate-limited', 403: 'forbidden', 503: 'offline' }
+    for (const [status, reason] of Object.entries(answers)) {
+      installFetch({ '/api/pairing/redeem': () => new Response(null, { status: Number(status) }) })
+      const { pairing, PairingError } = await freshApi()
+      const err = await pairing.redeem('HJ4K2M', 'x').catch((e: unknown) => e)
+      expect(err, `${status}`).toBeInstanceOf(PairingError)
+      expect((err as { reason: string }).reason, `${status}`).toBe(reason)
+    }
+  })
+
+  it('no connection is reported as offline, not as a wrong code', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      throw new TypeError('network down')
+    }))
+    const { pairing } = await freshApi()
+    await expect(pairing.redeem('HJ4K2M', 'x')).rejects.toMatchObject({ reason: 'offline' })
   })
 })

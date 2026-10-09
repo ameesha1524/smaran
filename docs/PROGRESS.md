@@ -3,7 +3,7 @@
 Read this at the start of every session, after `docs/MASTER_PROMPT.md`.
 All patient data in this repository is synthetic or demo data.
 
-Last updated: 2026-10-09 (end of Phase 2).
+Last updated: 2026-10-09 (end of Phase 3).
 
 ## Phase status
 
@@ -11,21 +11,21 @@ Last updated: 2026-10-09 (end of Phase 2).
 |---|---|---|---|
 | 0. Recon, baseline, plan | **Done** | `phase-0-recon` | PR #1 merged. Plan in `docs/PLAN.md` |
 | 1. Foundation: database, contracts, scoring | **P0 and P1 done** | `phase-1-foundation` | PR #2 merged into `phase-0-recon` by mistake; PR #3 carries it to `master` |
-| 2. Authentication and RBAC | **P0 and P1 done** | `phase-2-auth` | Stacked on `phase-0-recon` (which holds Phase 1). Verified; see "Phase 2" below |
-| 3. Device pairing | Not started | | A working version exists; it is reworked to spec |
+| 2. Authentication and RBAC | **P0 and P1 done** | `phase-2-auth` | PR #4 merged into `master` |
+| 3. Device pairing | **P0 and P1 done** | `phase-3-pairing` | Verified; see "Phase 3" below |
 | 4. Games to dashboards | Not started | | |
 | 5. Data science | Not started | | |
 | 6. DevOps | Not started | | |
 | 7. Hardening and showcase | Not started | | |
 
-**Next:** Phase 3 (device pairing, reworked to the prompt's spec).
+**Next:** Phase 4 (games to server to dashboards).
 
 ## Needs the human
 
 | # | What | Why | Until then |
 |---|---|---|---|
 | H1 | ~~Install Docker Desktop~~ | Done 2026-10-06 | none |
-| H2 | **Merge PR #3 (Phase 1 onto `master`), then the Phase 2 PR** | Merging to `master` is the owner's call | Phase 2 is built on top of the Phase 1 branch |
+| H2 | **Merge the Phase 3 PR** | Merging to `master` is the owner's call | Phase 4 builds on it |
 | H6 | ~~Pairing code format~~ | Decided 2026-10-07: 6 characters, 72 hours (the prompt's spec) | none |
 | H7 | Choose real `ADMIN_EMAIL` and `ADMIN_PASSWORD` for any deployment | The first administrator is created from these on first start; nothing in source can create one | Dev and demo use seeded demo accounts (see below); local runs set nothing |
 | H3 | Install `make` (optional) | `make` is not on PATH | Run the commands under each Makefile target by hand |
@@ -55,6 +55,18 @@ Last updated: 2026-10-09 (end of Phase 2).
 | 2026-10-09 | A refusal on the dashboard is shown as a refusal, never replaced with sample data | A doctor whose access ended must not see a plausible-looking week |
 | 2026-10-09 | The server returns the reason for deliberate status errors only (`{"message": ...}`) | So "use at least 10 characters" reaches a person; unexpected exceptions still return a bare status |
 | 2026-10-09 | `smaran.local.pg.dir` for the no-Docker database folder | A live database in a OneDrive folder was locked by sync |
+| 2026-10-09 | A tablet's credential is an opaque 256-bit token starting `sdt_`, stored only as SHA-256, looked up on every request, with an expiry that slides while the tablet is used (180 days idle) | Removal must take effect on the next request on every server; a database copy must not be usable as a tablet. One indexed read per request |
+| 2026-10-09 | The tablet's endpoints are under `/api/device/**` and name no patient; the patient is read from the token. A body that names a patient is overwritten | A tablet has no id to get wrong and nothing to point at someone else |
+| 2026-10-09 | `PATIENT` is no longer a role the guard knows; a device is `DEVICE`, and every caregiver, doctor and admin endpoint refuses it. Old signed `PATIENT` tokens are ignored | The matrix proves it for every endpoint |
+| 2026-10-09 | The family-side pairing paths stay at `/api/patients/{id}/pairing-codes` and `/devices`; redeeming is `POST /api/pairing/redeem` | The prompt's `/api/caregiver/patients/...` would fall under the dashboard's URL rule, which doctors also pass |
+| 2026-10-09 | Guessing is limited in the database (`pairing_attempt`): 5 failed tries per tablet id and 5 per address per 15 minutes; the address is stored as a hash; a locked client is refused even with a correct code | Survives a restart and holds across servers. The in-memory limiter did neither |
+| 2026-10-09 | Code and token hashes are SHA-256 with a pepper (the signing secret unless `smaran.pairing.pepper` is set); lookups are by hash | A comparison of the secret itself never happens, so there is no timing to measure |
+| 2026-10-09 | Redeeming returns a first name, a language and a kinship term; `/api/device/me` returns the rest of what a tablet needs | The prompt's minimal bundle |
+| 2026-10-09 | A removed tablet goes quiet: 401 or 403 on a device endpoint is reported as "offline", it keeps its data, and asks again once an hour | The patient must never meet an error she cannot fix |
+| 2026-10-09 | Pairing again to the same patient keeps local data; to a different patient, or when the tablet cannot say whose data it holds, wipes it first | Another person's journal, photographs and unsent sessions must never surface on, or be filed under, a new patient |
+| 2026-10-09 | A person's calls and a tablet's calls never share a credential in the client | A caregiver signing in on the tablet's browser must not make the tablet a caregiver, nor the tablet's token reach a family endpoint |
+| 2026-10-09 | The service worker no longer caches API responses | It keyed them by address alone: a re-paired tablet or a doctor with ended access would be served another's answer |
+| 2026-10-09 | The old tablet-style endpoints (`/api/session`, `/api/garden/{id}` ...) stay for family and admin until Phase 4 | Phase 4 rebuilds ingestion and removes them |
 | 2026-10-07 | D2 decided by the human: pairing codes are 6 characters, valid 72 hours | Follows the prompt. Weaker against guessing than 8 characters / 10 minutes, so Phase 3 keeps both rate limits and the hash-only storage |
 | 2026-10-06 | Phase 1 went ahead on defaults D1, D3, D4 after "go ahead with phase 1" | The human's instruction |
 | 2026-10-06 | Baseline for velocity is trailing: it excludes the score being judged | Otherwise a drop pulls its own baseline down and hides part of itself |
@@ -331,6 +343,79 @@ npm run build                                  → exit 0
 - The caregiver `Setup` screen (on-tablet setup) still calls caregiver endpoints with the tablet's token. In `dev` this works; elsewhere the server correctly refuses it. Phase 3 replaces it.
 - The tablet's token is still a signed JWT with role `PATIENT`. Phase 3 makes it an opaque `DEVICE` token.
 
+## Phase 3 — 2026-10-09
+
+Branch `phase-3-pairing`, from `master` after PR #4.
+
+### What was built
+
+**Backend**
+
+- Migration `V4`: drops the old `device_pairing` table and adds `device.expires_at`. The tables `pairing_code`, `device` and `pairing_attempt` already existed from `V2`; entities and repositories now use them.
+- `PairingService`: mint (retires any unused code), redeem. 27-symbol alphabet, 6 characters, 72 hours, peppered SHA-256, one conditional UPDATE to redeem, attempt limits in the database.
+- `DeviceService`: recognises a tablet by the hash of its token (every request, no cache), slides its expiry, lists tablets, removes one (audited).
+- `JwtAuthFilter`: two kinds of token, told apart by the `sdt_` prefix. Old signed tablet tokens and unknown roles leave a request anonymous.
+- `AccessGuard.requireDevice()` and `DeviceController` (`/api/device/**`): `me`, `game/route`, `garden`, `garden/water`, `sessions`, `sessions/batch`, `biomarker/vector`, `fl/gradients`, `mood`, `objects`, `family/members` and its result, `reminders`, and her own media. `PairingController` reduced to the family-side and redeem endpoints.
+
+**Frontend**
+
+- `/pair`: a pond-style screen with six large squares over one real input (so typing, pasting and a phone's code suggestions all work), gentle errors, an optional name for the tablet. `lib/pairingCode.ts` mirrors the alphabet.
+- Routing: no token goes to `/pair`; a token goes to the language confirmation if she has not given it, else the pond. `caregiverSetupComplete` is replaced by `devicePaired`; the old flag is still read, to tell a tablet set up before pairing existed.
+- `lib/api.ts`: a person's calls and a tablet's never share a credential. A tablet's refusal is silent (suspends, queues, asks again hourly).
+- `lib/devicePairing.ts`: remembers whose tablet it is; wipes IndexedDB, local storage and cached media before another patient.
+- The tablet's own random id lives in IndexedDB (`device_meta`) and survives a wipe.
+- Family panel: the code with a copy button and a "good for another 2 days 23 h" line, tablets with last-seen, remove with a confirmation. "Pairing a tablet?" link on the family sign-in page.
+- Service worker: never caches API responses.
+
+### Commands and results
+
+```
+cd backend
+mvn -o verify -Dsmaran.build.dir=C:/Users/amees/smaran-build   → BUILD SUCCESS
+
+Unit tests: 69, 0 failures   (PairingServiceTest is now 8 plain-function tests)
+Integration tests (PostgreSQL 16, embedded process): 402, 0 failures
+  AuthorizationMatrixIT  337   was 241: the tablet is now refused by every family endpoint,
+                               and the new /api/device endpoints are checked as every caller
+  PairingIT               23   NEW
+  AuthFlowIT              18
+  GrantsAndAuditIT        11
+  SchemaAndIngestionIT    11   expects migrations 1,2,3,4
+  DemoSeedIT               2
+```
+
+```
+cd frontend
+npx tsc -b && npx tsc -p tsconfig.test.json   → clean
+npm test                                       → 5 files, 83 tests passed (was 63; 20 new)
+npm run build                                  → exit 0
+```
+
+**The tests can fail.** The single-use guard in `PairingCodeRepository.claim` was deliberately weakened. `PairingIT.singleUse` failed ("expected 404 but was 200") and so did `concurrentRedemption` ("exactly one tablet may win: expected 1 but was 8"). The change was reverted.
+
+**Browser, end to end.** `e2e/phase3_pairing_flow.py` drives two separate Chrome profiles, a family's and a tablet's, against the real backend (demo profile, authentication on): **34 of 34 checks passed.** It covers: a new family and patient; a code shown as `HJ4K-2M`; an unpaired tablet sent to `/pair`; a wrong code turned away gently; the right code, typed in lower case, pairing it; the language confirmation; the pond, greeting her by first name; the token being opaque and the family's token being absent; the tablet's storage holding her first name and no surname; the token opening `/api/device/me` and refusing `/api/patients`; the family seeing the tablet; removal making the token refuse at once, including a session it was about to send; the removed tablet still showing her pond with nothing alarming on screen while its journal stays; pairing again to the same patient resuming and keeping what she wrote; pairing to a second patient wiping the first one's journal and cache; and the first token no longer working.
+
+### Defects found and fixed in this phase
+
+1. A test of mine found that **redeeming sent a signed-in person's token** when one happened to be signed in on the same browser. Redeeming now carries no credential.
+2. Found while reasoning about re-pairing: the **service worker cached API answers by address only**, so another patient's (or a doctor's, after access ended) data could be served from cache. It now never caches API answers.
+3. My first migration collided with tables `V2` had already created. I used the existing tables and migrated only what was missing.
+4. In `PairingIT` and the browser script, three waits matched by prefix (`'/pair'` starts with `'/'`) and passed or failed for the wrong reason. They now wait for the exact path.
+
+### Done-when, checked
+
+| Criterion | Result |
+|---|---|
+| A second browser profile pairs with a freshly minted code and reaches the patient's pond | Yes (browser script, steps 1 to 4) |
+| Revoking it stops its sync | Yes: its token is refused on the next request, a session POST gets 401, and its screen stays calm |
+| Tests: expiry, reuse, normalisation, rate limit, concurrent redemption, revoked-device refusal, device token denied elsewhere | All in `PairingIT` and the matrix |
+
+### Not done in Phase 3
+
+- Alert when the whole pairing endpoint is under a spread-out guessing attack (needs a global signal; Phase 6 with the proxy).
+- Family media on the tablet (Phase 4, item 10).
+- Voice notes from the caregiver (Phase 4, item 9).
+
 ## Known issues
 
 Found during recon. Each is scheduled in `docs/PLAN.md`.
@@ -376,6 +461,18 @@ Found during recon. Each is scheduled in `docs/PLAN.md`.
 27. **Embedded PostgreSQL is fragile when its process is killed** (a stale `postmaster.pid`), and **`mvn` collides with OneDrive and the VS Code Java extension on `backend/target`.** Use `-Dsmaran.build.dir` and `-Dsmaran.local.pg.dir` outside OneDrive.
 28. **The 404 for "no approved doctor with that email" lets any caregiver test whether a doctor account exists.** It is the price of sharing by email.
 
+
+## Found in Phase 3
+
+29. **A tablet paired under the old scheme is quiet until paired again.** Its old signed token is no longer honoured; it keeps her pond and her data, and the family's tablet list is empty. Nothing tells the family it is quiet.
+30. **Six characters is 28.5 bits.** Per-tablet and per-address limits are the control, not a guarantee: 10,000 addresses that also invent a tablet id each try could cover about 3.7% of the space in the 72 hours a code lives, and this grows with the number of live codes. A global alarm is the answer (Phase 6).
+31. **Behind a proxy every client shares an address** until forwarded headers are configured, and then five failed tries from anyone lock everyone out. Configure forwarded headers and trusted proxies with Caddy/nginx in Phase 6.
+32. **Family photographs and voice notes cannot load on the tablet yet.** `<img>` and `<audio>` cannot send a bearer token; the tablet-scoped media path exists. Phase 4 (item 10) fetches them with the token. (They have been broken since Phase 2 put authentication on the media path.)
+33. **The reactive difficulty stream (`/api/cognitive/*`) is not available to tablets.** It uses `EventSource`, which cannot send a token, and the prompt's device surface does not list it. The adaptive hook treats failure as "no signal".
+34. **A language she chooses while offline is not queued.** The server's value wins the next time it answers. Predates this phase.
+35. **The old tablet-style endpoints remain for family and admin** (`/api/session`, `/api/sync/sessions`, `/api/garden/{id}` ...). Phase 4 rebuilds ingestion and removes them.
+36. **A removed tablet's queue stays on the tablet** until it is paired again, by design.
+37. **Pairing and removal are audited, but the family's audit list does not say which tablet.** The record has the device id; the panel shows only "paired a tablet".
 
 ## Files left untracked on purpose
 

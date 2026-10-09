@@ -226,7 +226,7 @@ export interface SessionResultDraft {
 
 /** A one-time code the family reads out to set up her tablet. */
 export interface PairingCode {
-  /** Formatted for reading aloud: `ABCD-EFGH`. */
+  /** Formatted for reading aloud: `HJ4K-2M`. */
   code: string
   expiresAt: string
 }
@@ -240,12 +240,26 @@ export interface PairedDevice {
   expiresAt: string
 }
 
+/** The least a tablet is told when it pairs: a first name, a language, how she is addressed. */
+export interface DeviceBundle {
+  patientId: string
+  firstName: string
+  languageCode: LanguageCode
+  kinshipTerm: string
+}
+
 export interface RedeemResult {
   deviceToken: string
   deviceId: string
-  patientId: string
-  expiresAt: string
-  patient: Patient & { cognitiveProfile?: CognitiveProfile }
+  patient: DeviceBundle
+}
+
+/** What a paired tablet may know of its own patient. A first name only; no surname, no owner. */
+export interface DeviceMe extends DeviceBundle {
+  region?: string
+  peakWindow: PeakWindow
+  profileVersion: string
+  cognitiveProfile?: CognitiveProfile
 }
 
 /**
