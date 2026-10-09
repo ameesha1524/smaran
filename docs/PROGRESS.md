@@ -591,7 +591,7 @@ All of this is conditional on the simulation's assumptions; `data-science/README
 |---|---|
 | `make ds` reproduces every table and figure | Yes (`run_all.py`; `make` is not installed on this machine, so the Python commands were run directly; the Makefile targets are the same commands) |
 | The README states limits plainly | Yes |
-| A CI job runs a small-N version of the simulation and the golden-vector tests | Written; verified by running the same commands locally. The job itself is verified by PR CI |
+| A CI job runs a small-N version of the simulation and the golden-vector tests | Yes: the `datascience` job, green on PR #7 (Python 3.14 on Linux; pytest, the fixture diff, the small-N run). The backend job also runs the Python evaluation on the export, green |
 | The cohort loads through the real ingestion service; the export is admin-only and de-identified; the evaluation runs on exported data | Yes (`CohortExportIT`, `run_on_export.py`) |
 
 ### Not done in Phase 5
@@ -686,8 +686,8 @@ Found during recon. Each is scheduled in `docs/PLAN.md`.
 58. **Simulated sessions carry scores and no trials,** so the server cannot re-score them and they stay `scoring_trust = device`.
 59. **Loading the cohort takes about 85 ms a session** through ingestion (579 sessions in about 50 seconds). The 200-patient cohort would take over an hour; the loader takes a few patients of each trajectory (`--smaran.seed.per-trajectory`, default 2).
 60. **A loaded cohort shows an open "missed days" alert on every patient,** because dates move by whole weeks and the cohort's last day can be up to six days ago. Cosmetic.
-61. **The pins and the CI job use Python 3.14,** the version the results were produced with. Whether `actions/setup-python` and every wheel resolve on the CI runner is checked by the first CI run of this branch.
-62. **The CI step that diffs the committed fixture against a fresh one assumes NumPy gives the same stream on Linux and Windows.** Believed true for `Generator`, verified only on Windows until CI runs. (Found on the way, by the first CI run: a gzip file's bytes differ between platforms and carry a timestamp, so the fixture's curves are plain CSV now; every file is written with LF endings. Everything else the simulator wrote was byte-identical between Windows and Linux, which is the answer to the NumPy question.)
+61. **The pins and the CI job use Python 3.14,** the version the results were produced with. Checked: `actions/setup-python` and every pinned wheel resolve on the Linux runner (3.14.8).
+62. **The CI step that diffs the committed fixture against a fresh one assumes NumPy gives the same stream on Linux and Windows.** Verified: every file but one came out byte-identical on Linux and Windows. (Found by the first CI run: a gzip file's bytes differ between platforms and carry a timestamp, so the fixture's curves are plain CSV now; every file is written with LF endings. Everything else the simulator wrote was byte-identical between Windows and Linux, which is the answer to the NumPy question.)
 63. **Results are the same up to floating-point noise in the last digits, and the figures are not byte-identical between machines.**
 64. **`make` is not installed on this machine** (H3), so `make ds` was never run as such; its two lines were.
 
