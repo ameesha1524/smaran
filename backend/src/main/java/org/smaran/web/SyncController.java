@@ -1,6 +1,7 @@
 package org.smaran.web;
 
 import org.smaran.config.AccessGuard;
+import org.smaran.config.AccessGuard.Capability;
 import org.smaran.service.AudioBiomarkerService;
 import org.smaran.service.FederatedAggregationService;
 import org.smaran.service.SyncService;
@@ -35,13 +36,13 @@ public class SyncController {
 
     @PostMapping("/sync/sessions")
     public Dto.SyncResponse merge(@RequestBody Dto.SyncRequest body) {
-        guard.requireAccessTo(body.patientId());
+        guard.require(body.patientId(), Capability.PLAY);
         return sync.merge(body);
     }
 
     @PostMapping("/biomarker/vector")
     public void vector(@RequestBody Dto.AcousticVectorDto body) {
-        guard.requireAccessTo(body.patientId());
+        guard.require(body.patientId(), Capability.PLAY);
         biomarkers.store(body);
     }
 
@@ -51,7 +52,7 @@ public class SyncController {
      */
     @PostMapping("/fl/gradients")
     public Dto.GlobalModel gradients(@RequestBody Dto.GradientUpload body) {
-        guard.requireAccessTo(body.patientId());
+        guard.require(body.patientId(), Capability.PLAY);
         return federated.receive(body);
     }
 }

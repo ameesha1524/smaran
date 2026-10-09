@@ -2,9 +2,8 @@ package org.smaran.web;
 
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
-import java.util.Set;
 import org.smaran.config.AccessGuard;
-import org.smaran.config.JwtAuthFilter.SmaranPrincipal;
+import org.smaran.config.AccessGuard.Capability;
 import org.smaran.domain.CognitiveProfile;
 import org.smaran.domain.Patient;
 import org.smaran.repo.PatientRepository;
@@ -24,9 +23,8 @@ import org.springframework.web.server.ResponseStatusException;
 /**
  * Pairing a tablet — the endpoints from docs/rbac-architecture.md §6.
  *
- * The family side (issue a code, list and remove tablets) needs a signed-in
- * family account with access to the patient: the `device.pair` permission,
- * which in the current account model means CAREGIVER or ADMIN. A doctor can see
+ * The family side (issue a code, list and remove tablets) needs the CAREGIVE
+ * capability on the patient: their owner, or an admin. A doctor can see
  * a patient but cannot put a device in her hands, and a patient's own tablet
  * certainly cannot mint codes for more tablets.
  *
@@ -36,9 +34,6 @@ import org.springframework.web.server.ResponseStatusException;
 @RestController
 @RequestMapping("/api")
 public class PairingController {
-
-    /** Holders of `device.pair` in today's role enum. */
-    private static final Set<String> MAY_PAIR = Set.of("CAREGIVER", "ADMIN");
 
     private final PairingService pairing;
     private final PatientRepository patients;
@@ -103,19 +98,11 @@ public class PairingController {
     }
 
     /**
-     * Access to the patient first (404 if none — whether she exists is itself
-     * information), then the permission (403 — they already know she exists).
+     * Pairing is a caregiving act: the owner or an admin, never a doctor and never
+     * a tablet. The guard answers 403 for the wrong kind of user and 404 for a
+     * patient that is not theirs.
      */
     private String requireMayPair(String patientId) {
-        guard.requireAccessTo(patientId);
-        if (guard.isOpenDemo()) {
-            SmaranPrincipal principal = guard.current();
-            return principal != null ? principal.userId() : "open-demo";
-        }
-        SmaranPrincipal principal = guard.current();
-        if (principal == null || !MAY_PAIR.contains(principal.role())) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN);
-        }
-        return principal.userId();
+        return guard.require(patientId, Capability.CAREGIVE).userId();
     }
 }

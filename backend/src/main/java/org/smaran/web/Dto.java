@@ -28,15 +28,55 @@ public final class Dto {
     public record LoginRequest(String email, String password) {
     }
 
+    /**
+     * What a sign-in returns in the body. The refresh token is not here: it
+     * travels only in an HttpOnly cookie that scripts cannot read.
+     */
     public record LoginResponse(
             String accessToken,
-            String refreshToken,
             String role,
             String userId,
+            String name,
+            String status,
             List<String> patientIds) {
     }
 
-    public record RefreshRequest(String refreshToken) {
+    public record RegisterRequest(String name, String email, String password, String role, String phone) {
+    }
+
+    /** Doctors register as PENDING and get no tokens until an admin approves them. */
+    public record RegisterResponse(String userId, String status, String message, LoginResponse session) {
+    }
+
+    public record MeResponse(String userId, String name, String email, String role, String status, List<String> patientIds) {
+    }
+
+    public record CreatePatientRequest(
+            String name,
+            String languageCode,
+            String kinshipTerm,
+            String region,
+            String faith,
+            PeakWindow peakWindow,
+            boolean guardianConsent,
+            String guardianName,
+            String noticeVersion) {
+    }
+
+    public record GrantRequest(String doctorEmail, Integer days) {
+    }
+
+    public record GrantDto(
+            String id, String patientId, String doctorUserId, String doctorName, String doctorEmail,
+            Instant grantedAt, Instant expiresAt, Instant revokedAt, boolean live) {
+    }
+
+    /** What a doctor sees of a patient they have been given: enough to open her dashboard, nothing more. */
+    public record DoctorPatientDto(String patientId, String name, Instant sharedUntil) {
+    }
+
+    public record AdminUserDto(
+            String id, String name, String email, String role, String status, Instant createdAt, Instant lastLoginAt) {
     }
 
     /* ---------------------------------------------------------- patient */

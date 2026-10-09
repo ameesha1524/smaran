@@ -8,7 +8,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
-import org.smaran.domain.Caregiver;
+import org.smaran.domain.AppUser;
+import org.smaran.domain.ConsentRecord;
+import org.smaran.domain.DoctorGrant;
 import org.smaran.domain.CognitiveObjectResult;
 import org.smaran.domain.DomainReading;
 import org.smaran.domain.Enums.GameType;
@@ -23,7 +25,9 @@ import org.smaran.domain.MeaningfulObject;
 import org.smaran.domain.MoodLog;
 import org.smaran.domain.Patient;
 import org.smaran.domain.ReminderSchedule;
-import org.smaran.repo.CaregiverRepository;
+import org.smaran.repo.AppUserRepository;
+import org.smaran.repo.ConsentRecordRepository;
+import org.smaran.repo.DoctorGrantRepository;
 import org.smaran.repo.CognitiveObjectResultRepository;
 import org.smaran.repo.FamilyMemberRepository;
 import org.smaran.repo.GameSessionRepository;
@@ -62,7 +66,10 @@ public class DemoDataSeeder implements CommandLineRunner {
     public static final String PATIENT_ID = "demo-patient";
 
     private final PatientRepository patients;
-    private final CaregiverRepository caregivers;
+    private final AppUserRepository users;
+    private final DoctorGrantRepository grants;
+    private final ConsentRecordRepository consents;
+    private final org.springframework.core.env.Environment environment;
     private final FamilyMemberRepository family;
     private final MeaningfulObjectRepository objects;
     private final GameSessionRepository sessions;
@@ -75,7 +82,10 @@ public class DemoDataSeeder implements CommandLineRunner {
 
     public DemoDataSeeder(
             PatientRepository patients,
-            CaregiverRepository caregivers,
+            AppUserRepository users,
+            DoctorGrantRepository grants,
+            ConsentRecordRepository consents,
+            org.springframework.core.env.Environment environment,
             FamilyMemberRepository family,
             MeaningfulObjectRepository objects,
             GameSessionRepository sessions,
@@ -86,7 +96,10 @@ public class DemoDataSeeder implements CommandLineRunner {
             ObjectMapper json,
             CognitiveProfileService profiles) {
         this.patients = patients;
-        this.caregivers = caregivers;
+        this.users = users;
+        this.grants = grants;
+        this.consents = consents;
+        this.environment = environment;
         this.family = family;
         this.objects = objects;
         this.sessions = sessions;
@@ -105,14 +118,15 @@ public class DemoDataSeeder implements CommandLineRunner {
         }
         log.info("seeding synthetic demo data");
 
-        Caregiver caregiver = new Caregiver();
-        caregiver.setId("demo-caregiver");
-        caregiver.setName("Rupa Baruah");
-        caregiver.setEmail("rupa@example.com");
-        caregiver.setPasswordHash(encoder.encode("smaran"));
-        caregiver.setRole(Role.CAREGIVER);
-        caregiver.getAssignedPatientIds().add(PATIENT_ID);
-        caregivers.save(caregiver);
+        // These accounts have weak, published passwords. They exist only in the
+        // dev and demo profiles, and this refuses to run beside prod.
+        if (environment.acceptsProfiles(org.springframework.core.env.Profiles.of("prod"))) {
+            throw new IllegalStateException("Demo accounts must never be created with the prod profile active.");
+        }
+
+        AppUser caregiver = account("demo-caregiver", "Rupa Baruah", "rupa@example.com", Role.CAREGIVER);
+        AppUser doctor = account("demo-doctor", "Dr. Meera Das", "meera.das@example.com", Role.DOCTOR);
+        account("demo-admin", "Demo Admin", "admin@example.com", Role.ADMIN);
 
         Patient patient = new Patient();
         patient.setId(PATIENT_ID);
@@ -124,6 +138,20 @@ public class DemoDataSeeder implements CommandLineRunner {
         patient.setPeakWindow(PeakWindow.MORNING);
         patient.setCaregiverId(caregiver.getId());
         patients.save(patient);
+
+        ConsentRecord consent = new ConsentRecord();
+        consent.setPatientId(PATIENT_ID);
+        consent.setGivenBy(caregiver.getId());
+        consent.setNoticeVersion("2026-10");
+        consent.setGuardianName("Rupa Baruah");
+        consents.save(consent);
+
+        DoctorGrant grant = new DoctorGrant();
+        grant.setPatientId(PATIENT_ID);
+        grant.setDoctorUserId(doctor.getId());
+        grant.setGrantedBy(caregiver.getId());
+        grant.setExpiresAt(Instant.now().plus(Duration.ofDays(365)));
+        grants.save(grant);
 
         family.saveAll(List.of(
                 member("Rupa", "Daughter", "Jiyori", "She brings you tea in the blue cup every morning.", 3),
@@ -236,6 +264,16 @@ public class DemoDataSeeder implements CommandLineRunner {
                 objectResults.save(objectResult(session.getId(), at, "Kopou phool", SemanticCluster.NATURE, day % 5 != 0));
             }
         }
+    }
+
+    private AppUser account(String id, String name, String email, Role role) {
+        AppUser user = new AppUser();
+        user.setId(id);
+        user.setName(name);
+        user.setEmail(email);
+        user.setPasswordHash(encoder.encode("smaran"));
+        user.setRole(role);
+        return users.save(user);
     }
 
     private String write(Object value) {

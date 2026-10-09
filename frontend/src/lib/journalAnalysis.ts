@@ -13,6 +13,7 @@
  */
 
 import type { LanguageCode, SentimentSignals } from './types'
+import { currentBearer } from './api'
 
 /**
  * The instruction the backend gives the model.
@@ -89,9 +90,7 @@ export async function analyseJournalEntry({
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(localStorage.getItem('smaran.token')
-          ? { Authorization: `Bearer ${localStorage.getItem('smaran.token')}` }
-          : {}),
+        ...(currentBearer() ? { Authorization: `Bearer ${currentBearer()}` } : {}),
       },
       body: JSON.stringify({
         text,

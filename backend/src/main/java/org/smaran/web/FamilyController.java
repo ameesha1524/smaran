@@ -2,6 +2,7 @@ package org.smaran.web;
 
 import java.util.List;
 import org.smaran.config.AccessGuard;
+import org.smaran.config.AccessGuard.Capability;
 import org.smaran.domain.FamilyMember;
 import org.smaran.service.CognitiveProfileService;
 import org.smaran.service.FamilyGroveAdaptationService;
@@ -45,7 +46,7 @@ public class FamilyController {
 
     @GetMapping("/{patientId}/members")
     public List<Dto.FamilyMemberDto> members(@PathVariable String patientId) {
-        guard.requireAccessTo(patientId);
+        guard.require(patientId, Capability.PLAY);
         return grove.forPatient(patientId).stream().map(this::toDto).toList();
     }
 
@@ -59,7 +60,7 @@ public class FamilyController {
             @RequestParam(required = false) MultipartFile photo,
             @RequestParam(required = false) MultipartFile voiceNote) {
 
-        guard.requireAccessTo(patientId);
+        guard.require(patientId, Capability.CAREGIVE);
 
         FamilyMember member = new FamilyMember();
         member.setPatientId(patientId);
@@ -86,7 +87,7 @@ public class FamilyController {
             @PathVariable String patientId,
             @PathVariable String memberId,
             @RequestBody Dto.RecognitionResult body) {
-        guard.requireAccessTo(patientId);
+        guard.require(patientId, Capability.PLAY);
         return toDto(grove.recordResult(patientId, memberId, body.correct(), body.latencyMs()));
     }
 

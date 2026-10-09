@@ -4,6 +4,7 @@ import java.time.ZoneId;
 import java.time.Instant;
 import java.util.List;
 import org.smaran.config.AccessGuard;
+import org.smaran.config.AccessGuard.Capability;
 import org.smaran.domain.CognitiveProfile;
 import org.smaran.domain.MeaningfulObject;
 import org.smaran.domain.MoodLog;
@@ -60,7 +61,7 @@ public class PatientController {
 
     @GetMapping("/{id}/profile")
     public Dto.PatientDto profile(@PathVariable String id) {
-        guard.requireAccessTo(id);
+        guard.require(id, Capability.PLAY);
         Patient patient = patients.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
         CognitiveProfile profile = profiles.forPatient(id);
@@ -70,7 +71,7 @@ public class PatientController {
     @PatchMapping("/{id}/profile")
     @Transactional
     public Dto.PatientDto update(@PathVariable String id, @RequestBody Dto.PatientPatch patch) {
-        guard.requireAccessTo(id);
+        guard.require(id, Capability.CAREGIVE);
         Patient patient = patients.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
 
@@ -106,14 +107,14 @@ public class PatientController {
 
     @GetMapping("/{id}/objects")
     public List<ObjectDto> listObjects(@PathVariable String id) {
-        guard.requireAccessTo(id);
+        guard.require(id, Capability.PLAY);
         return objects.findByPatientId(id).stream().map(this::toObjectDto).toList();
     }
 
     @PutMapping("/{id}/objects")
     @Transactional
     public List<ObjectDto> replaceObjects(@PathVariable String id, @RequestBody List<ObjectDto> body) {
-        guard.requireAccessTo(id);
+        guard.require(id, Capability.CAREGIVE);
         objects.deleteByPatientId(id);
         List<MeaningfulObject> saved = objects.saveAll(body.stream()
                 .map(dto -> {
@@ -133,7 +134,7 @@ public class PatientController {
     @PostMapping("/{id}/mood")
     @Transactional
     public void checkIn(@PathVariable String id, @RequestBody Dto.MoodCheckIn body) {
-        guard.requireAccessTo(id);
+        guard.require(id, Capability.PLAY);
         MoodLog log = new MoodLog();
         log.setPatientId(id);
         log.setMood(body.mood());

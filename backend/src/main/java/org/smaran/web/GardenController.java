@@ -1,6 +1,7 @@
 package org.smaran.web;
 
 import org.smaran.config.AccessGuard;
+import org.smaran.config.AccessGuard.Capability;
 import org.smaran.domain.GardenState;
 import org.smaran.service.DashboardService;
 import org.smaran.service.GardenStateService;
@@ -35,14 +36,14 @@ public class GardenController {
 
     @GetMapping("/{patientId}")
     public Dto.GardenDto state(@PathVariable String patientId) {
-        guard.requireAccessTo(patientId);
+        guard.require(patientId, Capability.PLAY);
         GardenState state = gardens.forPatient(patientId);
         return dashboard.toGardenDto(state);
     }
 
     @PostMapping("/{patientId}/water")
     public Dto.GardenDto water(@PathVariable String patientId, @RequestBody Dto.WaterRequest body) {
-        guard.requireAccessTo(patientId);
+        guard.require(patientId, Capability.PLAY);
         double completion = body.completionRate() == null ? 1.0 : body.completionRate();
         return dashboard.toGardenDto(gardens.computeGrowth(patientId, body.gameType(), completion));
     }

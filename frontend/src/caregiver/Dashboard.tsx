@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
   CartesianGrid,
   Legend,
@@ -10,10 +10,11 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import { caregiver } from '../lib/api'
+import { caregiver, doctor } from '../lib/api'
 import { sampleDashboard } from './sampleDashboard'
 import PairingPanel from './PairingPanel'
-import { useSmaran } from '../state/SmaranContext'
+import AccessPanel from './AccessPanel'
+import { useAuth } from '../lib/auth'
 import { bloomCopy } from '../lib/gardenEngine'
 import type { DashboardAlert, DashboardSummary, GameType, GrovePhase } from '../lib/types'
 
@@ -59,26 +60,85 @@ const PHASE_NAMES: Record<GrovePhase, string> = {
   4: 'Recall',
 }
 
-export default function Dashboard() {
-  const { patient } = useSmaran()
+export default function Dashboard({ demo = false }: { demo?: boolean }) {
+  const { user, signOut } = useAuth()
+  const navigate = useNavigate()
+  const params = useParams()
   const [data, setData] = useState<DashboardSummary | null>(null)
   const [usingSample, setUsingSample] = useState(false)
+  const [denied, setDenied] = useState<number | null>(null)
+  const [unreachable, setUnreachable] = useState(false)
+  const [reportBusy, setReportBusy] = useState(false)
+  const [sharedUntil, setSharedUntil] = useState<string | null>(null)
+
+  // A doctor reads and nothing more. The server enforces this; here it only
+  // decides which controls are worth showing.
+  const readOnly = user?.role === 'DOCTOR'
+  const patientId = demo ? 'sample' : (params.patientId ?? user?.patientIds[0] ?? null)
 
   useEffect(() => {
+    if (demo) {
+      setData(sampleDashboard())
+      setUsingSample(true)
+      return
+    }
+    if (!patientId) return
     let alive = true
-    void caregiver.dashboard(patient.id).then((fresh) => {
+    setData(null)
+    setDenied(null)
+    setUnreachable(false)
+    void caregiver.dashboard(patientId).then((result) => {
       if (!alive) return
-      if (fresh) {
-        setData(fresh)
-      } else {
+      if (result.kind === 'ok') {
+        setData(result.data)
+        setUsingSample(false)
+      } else if (result.kind === 'denied') {
+        setDenied(result.status)
+      } else if (import.meta.env.DEV) {
+        // Development only: a screen to look at with no server running.
         setData(sampleDashboard())
         setUsingSample(true)
+      } else {
+        setUnreachable(true)
       }
     })
     return () => {
       alive = false
     }
-  }, [patient.id])
+  }, [demo, patientId])
+
+  // A doctor is told, on every patient, how long they have been given her.
+  useEffect(() => {
+    if (!readOnly || !patientId) return
+    let alive = true
+    doctor
+      .patients()
+      .then((list) => alive && setSharedUntil(list.find((p) => p.patientId === patientId)?.sharedUntil ?? null))
+      .catch(() => undefined)
+    return () => {
+      alive = false
+    }
+  }, [readOnly, patientId])
+
+  const openReport = async () => {
+    if (!patientId) return
+    setReportBusy(true)
+    try {
+      const url = URL.createObjectURL(await caregiver.report(patientId))
+      window.open(url, '_blank', 'noopener')
+      // The new tab has read it by now; do not keep the file in memory.
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+    } catch {
+      /* the button simply does nothing more: there is no report to show */
+    } finally {
+      setReportBusy(false)
+    }
+  }
+
+  const leave = async () => {
+    await signOut()
+    navigate('/caregiver/login', { replace: true })
+  }
 
   const chartData = useMemo(
     () =>
@@ -91,8 +151,36 @@ export default function Dashboard() {
 
   if (!data) {
     return (
-      <div className="flex min-h-screen items-center justify-center" style={{ color: 'var(--chalk-dim)' }}>
-        Opening her week…
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4 px-6 text-center" style={{ color: 'var(--chalk-dim)' }}>
+        {!patientId ? (
+          <>
+            <p className="font-sans" style={{ fontSize: 18 }}>
+              {readOnly ? 'No patient has been shared with you yet.' : 'You have not added anyone yet.'}
+            </p>
+            {!readOnly && (
+              <Link to="/caregiver/patients/new" className="pill" style={{ background: 'var(--olive-continue)', color: 'var(--chalk)' }}>
+                Add the person you care for
+              </Link>
+            )}
+          </>
+        ) : denied !== null ? (
+          <p className="font-sans" role="alert" style={{ fontSize: 18 }}>
+            {denied === 401
+              ? 'Please sign in again.'
+              : 'She was not found, or you no longer have access to her. If a family member shared her with you, the sharing may have ended.'}
+          </p>
+        ) : unreachable ? (
+          <p className="font-sans" role="alert" style={{ fontSize: 18 }}>
+            Smaran cannot be reached from here right now. Her dashboard needs a connection.
+          </p>
+        ) : (
+          <p className="font-sans">Opening her week…</p>
+        )}
+        {user && (
+          <button type="button" onClick={() => void leave()} className="font-sans underline" style={{ fontSize: 14, opacity: 0.7 }}>
+            Sign out
+          </button>
+        )}
       </div>
     )
   }
@@ -113,23 +201,43 @@ export default function Dashboard() {
             </p>
           </div>
           <div className="flex flex-wrap gap-3">
-            <Link to="/caregiver/setup" className="pill stone" style={{ padding: '10px 22px', fontSize: 17 }}>
-              Setup
-            </Link>
-            <a
-              href={caregiver.reportUrl(patient.id)}
-              target="_blank"
-              rel="noreferrer"
-              className="pill"
-              style={{ background: 'var(--olive-continue)', color: 'var(--chalk)', padding: '10px 22px', fontSize: 17 }}
-            >
-              PDF for the doctor
-            </a>
-            <Link to="/" className="pill stone" style={{ padding: '10px 22px', fontSize: 17 }}>
-              Her sanctuary
-            </Link>
+            {!readOnly && (
+              <Link to="/caregiver/setup" className="pill stone" style={{ padding: '10px 22px', fontSize: 17 }}>
+                Setup
+              </Link>
+            )}
+            {!demo && (
+              <button
+                type="button"
+                onClick={() => void openReport()}
+                disabled={reportBusy}
+                className="pill"
+                style={{ background: 'var(--olive-continue)', color: 'var(--chalk)', padding: '10px 22px', fontSize: 17 }}
+              >
+                {reportBusy ? 'One moment…' : 'PDF for the doctor'}
+              </button>
+            )}
+            {!readOnly && (
+              <Link to="/" className="pill stone" style={{ padding: '10px 22px', fontSize: 17 }}>
+                Her sanctuary
+              </Link>
+            )}
+            {user && (
+              <button type="button" onClick={() => void leave()} className="pill stone" style={{ padding: '10px 22px', fontSize: 17 }}>
+                Sign out
+              </button>
+            )}
           </div>
         </header>
+
+        {readOnly && (
+          <p className="font-sans" role="status" style={{ fontSize: 14, color: 'var(--chalk-dim)' }}>
+            Read-only. {sharedUntil ? `Shared with you until ${new Date(sharedUntil).toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' })}.` : 'Shared with you by her family.'}{' '}
+            <Link to="/doctor" className="underline">
+              All your patients
+            </Link>
+          </p>
+        )}
 
         {usingSample && (
           <p className="font-sans" style={{ fontSize: 13, color: 'var(--chalk-dim)', opacity: 0.6 }}>
@@ -329,7 +437,12 @@ export default function Dashboard() {
             </div>
           </section>
 
-          <PairingPanel patientId={patient.id} />
+          {!readOnly && !demo && patientId && (
+            <>
+              <PairingPanel patientId={patientId} />
+              <AccessPanel patientId={patientId} />
+            </>
+          )}
         </div>
 
         <footer className="pb-8 pt-2 font-sans" style={{ fontSize: 13, color: 'var(--chalk-dim)', opacity: 0.55 }}>

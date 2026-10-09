@@ -1,7 +1,7 @@
 package org.smaran.service;
 
 import lombok.extern.slf4j.Slf4j;
-import org.smaran.domain.Caregiver;
+import org.smaran.domain.AppUser;
 import org.smaran.domain.FamilyMember;
 import org.smaran.domain.Patient;
 import org.springframework.beans.factory.annotation.Value;
@@ -81,7 +81,7 @@ public class NotificationService {
      * The caregiver alert. Note the threshold this is called behind: three
      * consecutive missed days, not one. A quiet day is a resting day.
      */
-    public void smsCaregiver(Caregiver caregiver, String message) {
+    public void smsCaregiver(AppUser caregiver, String message) {
         if (twilioSid.isBlank() || caregiver.getPhone() == null) {
             log.info("[twilio not configured] sms → {}: {}", caregiver.getEmail(), message);
             return;

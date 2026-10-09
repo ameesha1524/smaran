@@ -7,7 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.smaran.domain.Enums.GameType;
 import org.smaran.domain.GardenState;
 import org.smaran.domain.Patient;
-import org.smaran.repo.CaregiverRepository;
+import org.smaran.repo.AppUserRepository;
 import org.smaran.repo.GardenStateRepository;
 import org.smaran.repo.PatientRepository;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -38,13 +38,13 @@ public class GardenStateService {
 
     private final GardenStateRepository gardens;
     private final PatientRepository patients;
-    private final CaregiverRepository caregivers;
+    private final AppUserRepository caregivers;
     private final NotificationService notifications;
 
     public GardenStateService(
             GardenStateRepository gardens,
             PatientRepository patients,
-            CaregiverRepository caregivers,
+            AppUserRepository caregivers,
             NotificationService notifications) {
         this.gardens = gardens;
         this.patients = patients;

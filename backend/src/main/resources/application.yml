@@ -48,8 +48,28 @@ smaran:
     # at least 32 bytes.
     jwt-secret: ${SMARAN_JWT_SECRET:change-me-change-me-change-me-change-me-32b}
     access-ttl-minutes: 15
+    # The refresh cookie is Secure by default. Browsers accept it on localhost;
+    # dev and demo turn it off so plain http on a LAN address also works.
+    cookie-secure: true
     refresh-ttl-days: 7
     open-demo: false
+
+  auth:
+    # Five wrong passwords lock an account for 15 minutes. Every failure
+    # looks the same to the caller, locked or not.
+    max-failures: 5
+    lockout-minutes: 15
+    # Sign-in attempts per client address before that address is refused.
+    ip-max-failures: 20
+    ip-window-minutes: 15
+    register-max-per-hour: 10
+
+  bootstrap:
+    # The first administrator, created once on first start if no admin exists.
+    # Never from source: set both in the environment. Without them no admin is
+    # created and the start-up log says so.
+    admin-email: ${ADMIN_EMAIL:}
+    admin-password: ${ADMIN_PASSWORD:}
 
   pairing:
     # A code is read off one phone and typed into a tablet in the same room.
@@ -129,6 +149,7 @@ smaran:
   security:
     jwt-secret: dev-only-secret-dev-only-secret-dev-only-32
     open-demo: true
+    cookie-secure: false
   cors:
     allowed-origins: http://localhost:5173,http://localhost:4173
 
@@ -156,6 +177,7 @@ smaran:
   security:
     jwt-secret: ${SMARAN_JWT_SECRET:demo-only-secret-demo-only-secret-demo-32}
     open-demo: false
+    cookie-secure: false
   cors:
     allowed-origins: ${SMARAN_CORS:http://localhost:5173,http://localhost:4173,http://localhost:8081}
 

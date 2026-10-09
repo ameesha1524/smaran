@@ -23,21 +23,52 @@ import type {
 } from './types'
 import { cacheGet, cacheSet, get, getAll, put, remove } from './db'
 
-const TOKEN_KEY = 'smaran.token'
-const REFRESH_KEY = 'smaran.refresh'
+/**
+ * Two kinds of credential, kept apart on purpose.
+ *
+ * A person who signs in (family, doctor, admin) gets a short-lived access token
+ * that lives only in this module's memory, never in storage. It is renewed from
+ * an HttpOnly cookie the browser holds and scripts cannot read, so a stolen page
+ * script cannot walk away with a long-lived secret.
+ *
+ * A paired tablet holds a long-lived device token in localStorage. It has no
+ * person to sign in and no cookie; the family removes the tablet instead.
+ */
+const DEVICE_KEY = 'smaran.deviceToken'
+const LEGACY_DEVICE_KEY = 'smaran.token'
 
-export function setTokens(access: string, refresh?: string) {
-  localStorage.setItem(TOKEN_KEY, access)
-  if (refresh) localStorage.setItem(REFRESH_KEY, refresh)
+let accessToken: string | null = null
+
+export function setAccessToken(token: string | null) {
+  accessToken = token
 }
 
-export function clearTokens() {
-  localStorage.removeItem(TOKEN_KEY)
-  localStorage.removeItem(REFRESH_KEY)
+export function getAccessToken(): string | null {
+  return accessToken
 }
 
-export function getToken(): string | null {
-  return localStorage.getItem(TOKEN_KEY)
+export function setDeviceToken(token: string) {
+  localStorage.setItem(DEVICE_KEY, token)
+}
+
+export function clearDeviceToken() {
+  localStorage.removeItem(DEVICE_KEY)
+  localStorage.removeItem(LEGACY_DEVICE_KEY)
+}
+
+export function getDeviceToken(): string | null {
+  // A tablet paired before the two were separated stored its token under the old name.
+  const legacy = localStorage.getItem(LEGACY_DEVICE_KEY)
+  if (legacy && !localStorage.getItem(DEVICE_KEY)) {
+    localStorage.setItem(DEVICE_KEY, legacy)
+    localStorage.removeItem(LEGACY_DEVICE_KEY)
+  }
+  return localStorage.getItem(DEVICE_KEY)
+}
+
+/** The credential to send: a signed-in person's if there is one, else this tablet's. */
+export function currentBearer(): string | null {
+  return accessToken ?? getDeviceToken()
 }
 
 export class OfflineError extends Error {
@@ -46,8 +77,8 @@ export class OfflineError extends Error {
   }
 }
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const token = getToken()
+async function request<T>(path: string, init: RequestInit = {}, retried = false): Promise<T> {
+  const token = currentBearer()
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     ...((init.headers as Record<string, string>) ?? {}),
@@ -61,29 +92,68 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     throw new OfflineError()
   }
 
-  if (res.status === 401 && localStorage.getItem(REFRESH_KEY)) {
-    const refreshed = await tryRefresh()
-    if (refreshed) return request<T>(path, init)
+  // A person's access token lasts 15 minutes. Renew it once from the cookie
+  // and try again. A tablet's token is never renewed: a 401 there means the
+  // family removed it, and the caller falls back to its offline copy.
+  if (res.status === 401 && accessToken !== null && !retried) {
+    if (await refreshSession()) return request<T>(path, init, true)
   }
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+  if (!res.ok) throw await HttpError.from(res)
   if (res.status === 204) return undefined as T
   return (await res.json()) as T
 }
 
-async function tryRefresh(): Promise<boolean> {
-  try {
-    const res = await fetch('/api/auth/refresh', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refreshToken: localStorage.getItem(REFRESH_KEY) }),
-    })
-    if (!res.ok) return false
-    const data = (await res.json()) as { accessToken: string; refreshToken: string }
-    setTokens(data.accessToken, data.refreshToken)
-    return true
-  } catch {
-    return false
+/** A non-2xx answer, with the sentence the server wrote for a person, if it wrote one. */
+export class HttpError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message)
   }
+
+  static async from(res: Response): Promise<HttpError> {
+    let message = `${res.status} ${res.statusText}`.trim()
+    try {
+      const body = (await res.clone().json()) as { message?: string }
+      if (body && typeof body.message === 'string') message = body.message
+    } catch {
+      /* no body, or not JSON: the status line will do */
+    }
+    return new HttpError(res.status, message)
+  }
+}
+
+let refreshing: Promise<AuthSession | null> | null = null
+
+/**
+ * Trade the refresh cookie for a new access token.
+ *
+ * One at a time: a second caller waits for the first and shares its answer.
+ * Refresh tokens rotate, so two parallel refreshes would present the same
+ * token twice, which the server treats as theft and answers by ending the
+ * session.
+ */
+export function refreshSession(): Promise<AuthSession | null> {
+  if (!refreshing) {
+    refreshing = (async () => {
+      try {
+        const res = await fetch('/api/auth/refresh', { method: 'POST', credentials: 'same-origin' })
+        if (!res.ok) {
+          accessToken = null
+          return null
+        }
+        const session = (await res.json()) as AuthSession
+        accessToken = session.accessToken
+        return session
+      } catch {
+        return null
+      } finally {
+        refreshing = null
+      }
+    })()
+  }
+  return refreshing
 }
 
 /** Read-through: network first, cache second, never an error screen. */
@@ -99,21 +169,63 @@ async function cachedGet<T>(path: string, cacheKey: string): Promise<T | undefin
 
 /* --------------------------------------------------------------- auth */
 
-export interface LoginResponse {
+export type UserRole = 'CAREGIVER' | 'DOCTOR' | 'ADMIN'
+
+export interface AuthSession {
   accessToken: string
-  refreshToken: string
-  role: 'PATIENT' | 'CAREGIVER' | 'DOCTOR' | 'ADMIN'
+  role: UserRole
   userId: string
+  name: string
+  status: string
   patientIds: string[]
 }
 
-export const auth = {
-  login: (email: string, password: string) =>
-    request<LoginResponse>('/api/auth/login', {
+export interface RegisterResult {
+  userId: string
+  status: string
+  message: string
+  session: AuthSession | null
+}
+
+async function authCall<T>(path: string, body?: unknown): Promise<T> {
+  let res: Response
+  try {
+    res = await fetch(path, {
       method: 'POST',
-      body: JSON.stringify({ email, password }),
-    }),
-  logout: () => clearTokens(),
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: body === undefined ? undefined : JSON.stringify(body),
+    })
+  } catch {
+    throw new OfflineError()
+  }
+  if (!res.ok) throw await HttpError.from(res)
+  if (res.status === 204) return undefined as T
+  return (await res.json()) as T
+}
+
+export const auth = {
+  login: async (email: string, password: string) => {
+    const session = await authCall<AuthSession>('/api/auth/login', { email, password })
+    accessToken = session.accessToken
+    return session
+  },
+  register: async (input: { name: string; email: string; password: string; role: 'CAREGIVER' | 'DOCTOR' }) => {
+    const result = await authCall<RegisterResult>('/api/auth/register', input)
+    if (result.session) accessToken = result.session.accessToken
+    return result
+  },
+  logout: async () => {
+    try {
+      await authCall<void>('/api/auth/logout')
+    } finally {
+      accessToken = null
+    }
+  },
+  me: () =>
+    request<{ userId: string; name: string; email: string; role: UserRole; status: string; patientIds: string[] }>(
+      '/api/auth/me',
+    ),
 }
 
 /* ------------------------------------------------------------ patient */
@@ -122,7 +234,9 @@ export const patients = {
   profile: (id: string) => cachedGet<Patient & { cognitiveProfile: CognitiveProfile }>(`/api/patient/${id}/profile`, `profile:${id}`),
   update: (id: string, patch: Partial<Patient>) =>
     request<Patient>(`/api/patient/${id}/profile`, { method: 'PATCH', body: JSON.stringify(patch) }),
-  create: (body: Partial<Patient>) => request<Patient>('/api/patient', { method: 'POST', body: JSON.stringify(body) }),
+  /** A caregiver adds the person they care for. The guardian's consent is part of the request, and required. */
+  create: (body: NewPatient) => request<Patient>('/api/patients', { method: 'POST', body: JSON.stringify(body) }),
+  mine: () => request<Patient[]>('/api/patients'),
 }
 
 /* -------------------------------------------------------------- games */
@@ -196,7 +310,7 @@ export const family = {
   add: (patientId: string, body: FormData) =>
     fetch(`/api/family/${patientId}/member`, {
       method: 'POST',
-      headers: getToken() ? { Authorization: `Bearer ${getToken()}` } : {},
+      headers: currentBearer() ? { Authorization: `Bearer ${currentBearer()}` } : {},
       body,
     }).then((r) => {
       if (!r.ok) throw new Error(`${r.status}`)
@@ -236,15 +350,112 @@ export const reminders = {
 
 /* ---------------------------------------------------------- caregiver */
 
+/** What asking for a dashboard can come to: the data, a refusal, or no server to ask. */
+export type DashboardResult =
+  | { kind: 'ok'; data: DashboardSummary }
+  | { kind: 'denied'; status: 401 | 403 | 404 }
+  | { kind: 'offline' }
+
+export interface NewPatient {
+  name: string
+  languageCode?: string
+  kinshipTerm?: string
+  region?: string
+  guardianConsent: boolean
+  guardianName?: string
+}
+
+export interface DoctorGrant {
+  id: string
+  patientId: string
+  doctorName: string | null
+  doctorEmail: string | null
+  grantedAt: string
+  expiresAt: string
+  revokedAt: string | null
+  live: boolean
+}
+
+export interface AuditEntry {
+  id: number
+  at: string
+  actorType: string
+  actorId: string | null
+  action: string
+  resource: string | null
+}
+
+export interface SharedPatient {
+  patientId: string
+  name: string
+  sharedUntil: string
+}
+
+export interface AdminUser {
+  id: string
+  name: string
+  email: string
+  role: string
+  status: string
+  createdAt: string
+  lastLoginAt: string | null
+}
+
 export const caregiver = {
-  dashboard: (patientId: string) =>
-    cachedGet<DashboardSummary>(`/api/caregiver/dashboard/${patientId}`, `dashboard:${patientId}`),
-  reportUrl: (patientId: string) => `/api/report/patient/${patientId}`,
+  /**
+   * A refusal is shown as a refusal, never papered over with sample data: a
+   * doctor whose access ended must not be shown a plausible-looking week.
+   * Sample data is only for "there is no server here at all".
+   */
+  dashboard: async (patientId: string): Promise<DashboardResult> => {
+    try {
+      const data = await request<DashboardSummary>(`/api/caregiver/dashboard/${patientId}`)
+      await cacheSet(`dashboard:${patientId}`, data)
+      return { kind: 'ok', data }
+    } catch (e) {
+      if (e instanceof HttpError && (e.status === 401 || e.status === 403 || e.status === 404)) {
+        return { kind: 'denied', status: e.status }
+      }
+      const cached = await cacheGet<DashboardSummary>(`dashboard:${patientId}`)
+      return cached ? { kind: 'ok', data: cached } : { kind: 'offline' }
+    }
+  },
+  /**
+   * The doctor's PDF. A plain link cannot carry the sign-in header, so this
+   * fetches it with the token and hands back the file.
+   */
+  report: async (patientId: string): Promise<Blob> => {
+    const send = () =>
+      fetch(`/api/report/patient/${patientId}`, { headers: { Authorization: `Bearer ${currentBearer() ?? ''}` } })
+    let res = await send()
+    if (res.status === 401 && getAccessToken() !== null && (await refreshSession())) res = await send()
+    if (!res.ok) throw await HttpError.from(res)
+    return res.blob()
+  },
   saveObjects: (patientId: string, objects: MeaningfulObject[]) =>
     request<MeaningfulObject[]>(`/api/patient/${patientId}/objects`, {
       method: 'PUT',
       body: JSON.stringify(objects),
     }),
+  grants: (patientId: string) => request<DoctorGrant[]>(`/api/patients/${patientId}/doctor-grants`),
+  grant: (patientId: string, doctorEmail: string, days: number) =>
+    request<DoctorGrant>(`/api/patients/${patientId}/doctor-grants`, {
+      method: 'POST',
+      body: JSON.stringify({ doctorEmail, days }),
+    }),
+  revokeGrant: (patientId: string, grantId: string) =>
+    request<void>(`/api/patients/${patientId}/doctor-grants/${grantId}`, { method: 'DELETE' }),
+  audit: (patientId: string, limit = 30) => request<AuditEntry[]>(`/api/patients/${patientId}/audit?limit=${limit}`),
+}
+
+export const doctor = {
+  patients: () => request<SharedPatient[]>('/api/doctor/patients'),
+}
+
+export const admin = {
+  users: (status?: string) => request<AdminUser[]>(`/api/admin/users${status ? `?status=${status}` : ''}`),
+  approve: (id: string) => request<AdminUser>(`/api/admin/users/${id}/approve`, { method: 'POST' }),
+  disable: (id: string) => request<AdminUser>(`/api/admin/users/${id}/disable`, { method: 'POST' }),
 }
 
 /* ------------------------------------------------------------ pairing */
@@ -265,7 +476,7 @@ export class PairingError extends Error {
  * `request` and its quiet offline behaviour.
  */
 async function pairingCall<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const token = getToken()
+  const token = currentBearer()
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
   if (token) headers.Authorization = `Bearer ${token}`
   let res: Response
