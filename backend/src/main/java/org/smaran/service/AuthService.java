@@ -113,9 +113,6 @@ public class AuthService {
     /* ------------------------------------------------------------ register */
 
     public Registered register(String name, String email, String password, String roleName, String phone, String ip) {
-        if (!registerLimiter.tryRecord(ip)) {
-            throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS, "Too many sign-ups from here. Try again later.");
-        }
         String cleanEmail = email == null ? "" : email.trim().toLowerCase();
         if (!EMAIL.matcher(cleanEmail).matches() || cleanEmail.length() > 254) {
             throw bad("Enter a valid email address.");
@@ -128,6 +125,12 @@ public class AuthService {
         List<String> problems = PasswordPolicy.problems(password, cleanEmail);
         if (!problems.isEmpty()) {
             throw bad(String.join(" ", problems));
+        }
+        // Counted only now: a form that fails validation costs nothing, so a typo
+        // must not use up the allowance. What is limited is attempts that would
+        // reach the database and the password hash.
+        if (!registerLimiter.tryRecord(ip)) {
+            throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS, "Too many sign-ups from here. Try again later.");
         }
         if (users.existsByEmail(cleanEmail)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "That email already has an account.");

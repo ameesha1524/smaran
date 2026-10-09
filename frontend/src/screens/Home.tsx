@@ -333,7 +333,7 @@ export default function Home() {
       {/* ------------- pinned to the screen, outside the water, never cropped -- */}
       <SyncIndicator className="px-corner-sync" />
       <Link
-        to="/caregiver"
+        to="/caregiver/login"
         style={{
           position: 'absolute',
           right: 26,

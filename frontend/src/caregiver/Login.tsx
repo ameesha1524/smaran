@@ -1,18 +1,19 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
-import Sanctuary from '../scenes/Sanctuary'
-import { auth, setTokens } from '../lib/api'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { HttpError, OfflineError } from '../lib/api'
+import { homeFor, useAuth } from '../lib/auth'
+import AuthShell, { Field, fieldStyle } from './AuthShell'
 
 /**
- * The caregiver's way in.
+ * The way in for family, doctors and administrators.
  *
- * Deliberately a different register from the patient app: this person is tired,
- * probably on a phone, probably in another city, and needs a form that behaves
- * like a form. The pond is still behind them, receded — it is the same house.
+ * One door for all three: the server says which kind of person this is, and
+ * they are sent to their own home. The patient never sees this screen.
  */
-
 export default function Login() {
   const navigate = useNavigate()
+  const location = useLocation()
+  const { signIn } = useAuth()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
@@ -23,82 +24,85 @@ export default function Login() {
     setBusy(true)
     setError(null)
     try {
-      const res = await auth.login(email, password)
-      setTokens(res.accessToken, res.refreshToken)
-      navigate('/caregiver/dashboard')
-    } catch {
-      setError('That did not work. Check the email and password, or try again when you have signal.')
+      const user = await signIn(email, password)
+      const from = (location.state as { from?: string } | null)?.from
+      navigate(from && from !== '/caregiver/login' ? from : homeFor(user.role), { replace: true })
+    } catch (err) {
+      setError(messageFor(err))
     } finally {
       setBusy(false)
     }
   }
 
   return (
-    <div className="relative min-h-screen w-full overflow-hidden">
-      <Sanctuary phase="night" bloomStage={2} recede />
+    <AuthShell title="For family & carers" subtitle="Set up her sanctuary, and see how the week has been.">
+      <form onSubmit={submit} className="soft-panel flex flex-col gap-4 p-6">
+        <Field label="Email">
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            autoComplete="username"
+            required
+            className="rounded-full px-4 py-3"
+            style={fieldStyle}
+          />
+        </Field>
+        <Field label="Password">
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            autoComplete="current-password"
+            required
+            className="rounded-full px-4 py-3"
+            style={fieldStyle}
+          />
+        </Field>
 
-      <div className="relative z-20 mx-auto flex min-h-screen max-w-md flex-col justify-center gap-7 px-6">
-        <div>
-          <h1 className="inscription font-serif" style={{ fontSize: 40 }}>
-            For family &amp; carers
-          </h1>
-          <p className="mt-2 font-sans" style={{ fontSize: 16, color: 'var(--chalk-dim)' }}>
-            Set up her sanctuary, and see how the week has been.
+        {error && (
+          <p className="font-sans" style={{ fontSize: 15, color: 'var(--terracotta)' }} role="alert">
+            {error}
           </p>
-        </div>
+        )}
 
-        <form onSubmit={submit} className="soft-panel flex flex-col gap-4 p-6">
-          <label className="flex flex-col gap-2">
-            <span style={{ fontSize: 15, color: 'var(--chalk-dim)' }}>Email</span>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              autoComplete="username"
-              required
-              className="rounded-full px-4 py-3"
-              style={{ background: 'rgba(8,15,30,0.7)', border: '1px solid rgba(221,234,248,0.2)', color: 'var(--chalk)', fontSize: 18 }}
-            />
-          </label>
+        <button type="submit" className="pill mt-2" disabled={busy} style={{ background: 'var(--olive-continue)', color: 'var(--chalk)' }}>
+          {busy ? 'One moment…' : 'Sign in'}
+        </button>
+      </form>
 
-          <label className="flex flex-col gap-2">
-            <span style={{ fontSize: 15, color: 'var(--chalk-dim)' }}>Password</span>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              autoComplete="current-password"
-              required
-              className="rounded-full px-4 py-3"
-              style={{ background: 'rgba(8,15,30,0.7)', border: '1px solid rgba(221,234,248,0.2)', color: 'var(--chalk)', fontSize: 18 }}
-            />
-          </label>
+      <p className="font-sans" style={{ fontSize: 15, color: 'var(--chalk-dim)' }}>
+        New here?{' '}
+        <Link to="/caregiver/register" className="underline" style={{ color: 'var(--chalk)' }}>
+          Create an account
+        </Link>
+      </p>
 
-          {error && (
-            <p className="font-sans" style={{ fontSize: 15, color: 'var(--terracotta)' }} role="alert">
-              {error}
-            </p>
-          )}
-
-          <button type="submit" className="pill mt-2" disabled={busy} style={{ background: 'var(--olive-continue)', color: 'var(--chalk)' }}>
-            {busy ? 'One moment…' : 'Sign in'}
-          </button>
-        </form>
-
-        {/* A demo must be openable on a stage with no backend behind it. */}
+      {/* Sample data, so the dashboard can be shown with no server behind it. Never in a production build. */}
+      {import.meta.env.DEV && (
         <button
           type="button"
-          onClick={() => navigate('/caregiver/dashboard')}
-          className="font-sans underline"
+          onClick={() => navigate('/caregiver/demo')}
+          className="text-left font-sans underline"
           style={{ fontSize: 14, color: 'var(--chalk-dim)', opacity: 0.6 }}
         >
-          Continue without signing in (demo data)
+          Show the sample dashboard (development only)
         </button>
+      )}
 
-        <Link to="/" className="font-sans underline" style={{ fontSize: 14, color: 'var(--chalk-dim)', opacity: 0.6 }}>
-          Back to the pond
-        </Link>
-      </div>
-    </div>
+      <Link to="/" className="font-sans underline" style={{ fontSize: 14, color: 'var(--chalk-dim)', opacity: 0.6 }}>
+        Back to the pond
+      </Link>
+    </AuthShell>
   )
+}
+
+function messageFor(err: unknown): string {
+  if (err instanceof OfflineError) return 'Smaran cannot be reached from here right now. Try again when you have signal.'
+  if (err instanceof HttpError) {
+    if (err.status === 429) return 'Too many tries just now. Wait a few minutes and try again.'
+    if (err.status === 403) return err.message
+    if (err.status === 401) return 'That did not match. Check the email and password.'
+  }
+  return 'Something went wrong on our side. Please try again in a moment.'
 }

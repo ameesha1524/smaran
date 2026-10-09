@@ -13,7 +13,8 @@ import org.springframework.boot.SpringApplication;
  * classpath), points the application at it, and starts the `dev` profile:
  * Flyway migrations, seeded demo data, API open. The data directory is
  * target/local-postgres, so it survives a restart and is cleared by
- * `mvn clean`.
+ * `mvn clean`. Set -Dsmaran.local.pg.dir=... to keep it elsewhere, for example
+ * outside a OneDrive folder, whose sync can lock a live database's files.
  *
  * With Docker, prefer `docker compose up -d db` and the normal
  * `mvn spring-boot:run -Dspring-boot.run.profiles=dev`.
@@ -25,7 +26,7 @@ public class LocalDevApplication {
 
     public static void main(String[] args) throws Exception {
         EmbeddedPostgres postgres = EmbeddedPostgres.builder()
-                .setDataDirectory(Path.of("target", "local-postgres"))
+                .setDataDirectory(Path.of(System.getProperty("smaran.local.pg.dir", "target/local-postgres")))
                 .setCleanDataDirectory(false)
                 .setPort(Integer.getInteger("smaran.local.pg.port", 54329))
                 .start();

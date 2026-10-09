@@ -37,7 +37,10 @@ npm run dev                                             # → :5173
 ```
 
 Both seed synthetic demo data and, in the `dev` profile, leave the API open.
-The caregiver dashboard is at `/caregiver` (`rupa@example.com` / `smaran`).
+Sign in at `/caregiver/login`. The `dev` and `demo` profiles seed three demo
+accounts, all with the password `smaran`: `rupa@example.com` (family),
+`meera.das@example.com` (a doctor, with Anima's record shared) and
+`admin@example.com` (administrator). They exist in no other profile.
 All data in this repository is synthetic.
 
 Tests: `npm test` in `frontend/`, `mvn verify` in `backend/`.

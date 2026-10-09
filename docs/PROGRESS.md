@@ -3,30 +3,31 @@
 Read this at the start of every session, after `docs/MASTER_PROMPT.md`.
 All patient data in this repository is synthetic or demo data.
 
-Last updated: 2026-10-06 (end of Phase 1).
+Last updated: 2026-10-09 (end of Phase 2).
 
 ## Phase status
 
 | Phase | Status | Branch | Notes |
 |---|---|---|---|
-| 0. Recon, baseline, plan | **Done** | `phase-0-recon` | PR #1, open. Plan in `docs/PLAN.md` |
-| 1. Foundation: database, contracts, scoring | **P0 and P1 done** | `phase-1-foundation` | PR #2, open, CI green; Docker stack verified locally |
-| 2. Authentication and RBAC | Not started | | |
+| 0. Recon, baseline, plan | **Done** | `phase-0-recon` | PR #1 merged. Plan in `docs/PLAN.md` |
+| 1. Foundation: database, contracts, scoring | **P0 and P1 done** | `phase-1-foundation` | PR #2 merged into `phase-0-recon` by mistake; PR #3 carries it to `master` |
+| 2. Authentication and RBAC | **P0 and P1 done** | `phase-2-auth` | Stacked on `phase-0-recon` (which holds Phase 1). Verified; see "Phase 2" below |
 | 3. Device pairing | Not started | | A working version exists; it is reworked to spec |
 | 4. Games to dashboards | Not started | | |
 | 5. Data science | Not started | | |
 | 6. DevOps | Not started | | |
 | 7. Hardening and showcase | Not started | | |
 
-**Next:** Phase 2 (authentication and RBAC).
+**Next:** Phase 3 (device pairing, reworked to the prompt's spec).
 
 ## Needs the human
 
 | # | What | Why | Until then |
 |---|---|---|---|
 | H1 | ~~Install Docker Desktop~~ | Done 2026-10-06 | none |
-| H2 | **Merge PR #1 (Phase 0), then the Phase 1 PR** | Merging to `master` is the owner's call | Phase 1 is stacked on the Phase 0 branch |
+| H2 | **Merge PR #3 (Phase 1 onto `master`), then the Phase 2 PR** | Merging to `master` is the owner's call | Phase 2 is built on top of the Phase 1 branch |
 | H6 | ~~Pairing code format~~ | Decided 2026-10-07: 6 characters, 72 hours (the prompt's spec) | none |
+| H7 | Choose real `ADMIN_EMAIL` and `ADMIN_PASSWORD` for any deployment | The first administrator is created from these on first start; nothing in source can create one | Dev and demo use seeded demo accounts (see below); local runs set nothing |
 | H3 | Install `make` (optional) | `make` is not on PATH | Run the commands under each Makefile target by hand |
 | H4 | Review the commit `f388fe8` | It is 37 files of earlier work that nobody has read as a diff | It is the base for Phase 1 |
 | H5 | Everything in Appendix E of the master prompt (VM, domain, secrets, branch protection) | Needed for deployment in Phase 6 | Not blocking before Phase 6 |
@@ -41,6 +42,19 @@ Last updated: 2026-10-06 (end of Phase 1).
 | 2026-10-06 | Untrack `backend/target/` and `frontend/tsconfig.tsbuildinfo` | Build output |
 | 2026-10-06 | Keep the unified scoring path rather than restore `applyFrogReport` (default D1) | See `PLAN.md` section 2 |
 | 2026-10-06 | PRs target `master` until the branch is renamed in Phase 6 (default D4) | Renaming the default branch is the owner's setting |
+| 2026-10-09 | Refresh token is an opaque 256-bit random value stored as SHA-256, rotating, with family revocation on reuse; it travels only in an HttpOnly, SameSite=Strict cookie scoped to `/api/auth` | Prompt's auth decision; a script cannot read it and another site's requests do not carry it |
+| 2026-10-09 | Access token carries role and identity, never a patient list | Ownership is read from the database on every request, so removing access takes effect on the next call |
+| 2026-10-09 | Every endpoint declares one capability: CAREGIVE, PLAY or CLINICAL_READ. Role is checked first (403), ownership second (404) | 403 depends on no patient, so it leaks nothing about who exists; 404 for someone else's patient equals 404 for a missing one |
+| 2026-10-09 | A doctor may use CLINICAL_READ only, and only on GET | Read-only by construction, not only by which endpoints exist |
+| 2026-10-09 | Admin is audited, may reach any patient that exists; a missing patient is 404 | An unguarded admin path produced a database error in the matrix test |
+| 2026-10-09 | Unauthenticated requests get 401 (Spring defaults to 403) | A client must tell "sign in" from "you may not" |
+| 2026-10-09 | Every failure to sign in looks the same (wrong password, unknown email, locked, disabled), with a hash comparison in every case | No account enumeration by response or timing |
+| 2026-10-09 | Lockout: 5 failures, 15 minutes. Per-address limit: 20 failures per 15 minutes. Both in memory | Prompt asks for rate limiting and lockout; Redis is the upgrade for several nodes |
+| 2026-10-09 | Sign-up limit (10 per address per hour) counts only attempts that pass validation | A typo must not use up the allowance; found when repeated test runs locked me out |
+| 2026-10-09 | The tablet keeps its token under `smaran.deviceToken`; a person's access token is held in memory only | The two have opposite needs: one must persist, the other must not be in storage. The old key is migrated |
+| 2026-10-09 | A refusal on the dashboard is shown as a refusal, never replaced with sample data | A doctor whose access ended must not see a plausible-looking week |
+| 2026-10-09 | The server returns the reason for deliberate status errors only (`{"message": ...}`) | So "use at least 10 characters" reaches a person; unexpected exceptions still return a bare status |
+| 2026-10-09 | `smaran.local.pg.dir` for the no-Docker database folder | A live database in a OneDrive folder was locked by sync |
 | 2026-10-07 | D2 decided by the human: pairing codes are 6 characters, valid 72 hours | Follows the prompt. Weaker against guessing than 8 characters / 10 minutes, so Phase 3 keeps both rate limits and the hash-only storage |
 | 2026-10-06 | Phase 1 went ahead on defaults D1, D3, D4 after "go ahead with phase 1" | The human's instruction |
 | 2026-10-06 | Baseline for velocity is trailing: it excludes the score being judged | Otherwise a drop pulls its own baseline down and hides part of itself |
@@ -244,6 +258,79 @@ there, on PostgreSQL 16.
   is Phase 4 by design.
 - No entity maps the `V2` tables yet.
 
+## Phase 2 — 2026-10-09
+
+Branch `phase-2-auth`, built on `phase-0-recon` (which contains Phase 1).
+
+### What was built
+
+**Backend**
+
+- Migration `V3`: accounts move from the `caregiver` table to `app_user`. A patient's owner is now a foreign key. A doctor's old assigned patients became 90-day grants. `caregiver` and `caregiver_patient` are dropped.
+- `AuthService`: register (doctors start `PENDING`), sign in, refresh, logout. `AuthController`: `/api/auth/register|login|refresh|logout|me`.
+- `AccessGuard` with `Capability`, replacing `requireAccessTo`. All 25 patient endpoints converted. `@EnableMethodSecurity` and `@PreAuthorize("@roles.any(...)")` on the new role-gated controllers.
+- `PatientAccessService`: patient creation with recorded guardian consent; doctor grants with expiry (1 to 365 days), revoke, replace.
+- `AuditService`: append-only `audit_event`. Records every read or write of patient data by a caregiver, doctor or admin, every refused attempt, every grant and revoke, sign-ins and failures. A tablet's routine reads are not recorded.
+- `AdminService`, `AdminBootstrap` (first admin from `ADMIN_EMAIL` and `ADMIN_PASSWORD`, once), `PasswordPolicy`, `AttemptLimiter`, `ApiExceptionHandler`.
+- `DemoDataSeeder` creates three demo accounts (`rupa@example.com` caregiver, `meera.das@example.com` doctor with a one-year grant, `admin@example.com` admin; all with the password `smaran`) and a consent record. It runs only in `dev` and `demo`, and refuses to run beside `prod`.
+
+**Frontend**
+
+- Access token in memory; silent renewal from the cookie, one at a time (refresh tokens are single use).
+- `AuthProvider`, `RequireRole`, and screens: sign in, register, add a patient (with the consent step), doctor home, admin home, a "Who can see her / who has looked" panel.
+- The doctor dashboard is read-only, shows "shared until", and hides tablet pairing and sharing. The PDF is fetched with the token (a plain link cannot send it).
+
+### Commands and results
+
+```
+cd backend
+mvn -o verify -Dsmaran.build.dir=C:/Users/amees/smaran-build   → BUILD SUCCESS
+
+Unit tests: 74, 0 failures
+  incl. PasswordPolicyTest 4, AttemptLimiterTest 3, AdminBootstrapTest 5
+Integration tests (PostgreSQL 16, embedded process): 283, 0 failures
+  AuthorizationMatrixIT  241   every endpoint as every caller
+  AuthFlowIT              18   registration, sign-in, lockout, refresh rotation and reuse, tampering
+  GrantsAndAuditIT        11   consent, grants, expiry, doctor read-only, audit
+  SchemaAndIngestionIT    11
+  DemoSeedIT               2
+```
+
+```
+cd frontend
+npx tsc -b && npx tsc -p tsconfig.test.json   → clean
+npm test                                       → 4 files, 63 tests passed (13 new, in api.test.ts)
+npm run build                                  → exit 0
+```
+
+**The matrix can fail.** The caregiver ownership check in `AccessGuard` was deliberately replaced with `true`. The matrix then failed with named cases, for example `POST /api/patients/{p}/pairing-codes as OTHER_CAREGIVER ==> expected: <404> but was: <200>`. The change was reverted.
+
+**Browser, end to end.** `e2e/phase2_ui_flow.py` drives headless Chrome against the real backend (demo profile, authentication on, PostgreSQL) and the Vite dev server: **37 of 37 checks passed.** It covers sign in, reload staying signed in, no token in storage, sign out, registration with a weak and a common password, adding a patient (button disabled until consent), sharing with a doctor and with a stranger, the doctor's read-only view, being turned away from other areas, revoking, the doctor losing access, doctor registration waiting for approval, and the admin approving. It is a Windows-only developer script; Phase 7 replaces it with Playwright.
+
+### Defects found by the tests and fixed in this phase
+
+1. An admin asking for a patient that does not exist caused a database foreign-key error (500). It is now a 404.
+2. `POST /api/session` and the batch sync crashed with a 500 when `startedAt` or `gameType` was missing. The first returns 400; the second skips the row.
+3. Spring hid every error message, so "use at least 10 characters" never reached a person. `ApiExceptionHandler` passes through the reason of deliberate status errors only.
+4. The sign-up limit counted attempts that failed validation, so mistyping a few times locked someone out for an hour.
+5. While the sharing list was loading, the panel said "No doctor can see her right now". That is false until known; it now shows a loading line, and a failed load shows an error.
+
+### Done-when, checked
+
+| Criterion | Result |
+|---|---|
+| The matrix test passes | Yes, 241 of 241 |
+| A stolen or tampered token fails | Yes: altered payload, damaged signature, `alg=none`, a different secret, an expired token and garbage all give 401 |
+| The frontend cannot reach data its role should not see by editing client code | Yes by construction: the server decides; confirmed for doctor, other-caregiver and tablet tokens against every endpoint |
+
+### Not done in Phase 2
+
+- Item 9's "validation on every request body" is not done. I added checks where the matrix found a crash (sessions, sync) and the account and patient forms. Jakarta Validation across all DTOs is left for Phase 4, when the session payload changes anyway.
+- Security headers (CSP, HSTS, frame options): not done. They belong with the Caddy and nginx work in Phase 6.
+- Request size limits: only the existing multipart limit.
+- The caregiver `Setup` screen (on-tablet setup) still calls caregiver endpoints with the tablet's token. In `dev` this works; elsewhere the server correctly refuses it. Phase 3 replaces it.
+- The tablet's token is still a signed JWT with role `PATIENT`. Phase 3 makes it an opaque `DEVICE` token.
+
 ## Known issues
 
 Found during recon. Each is scheduled in `docs/PLAN.md`.
@@ -275,6 +362,20 @@ Found during recon. Each is scheduled in `docs/PLAN.md`.
     holds `backend/target`. Run without `clean`, or close the Java project.
 18. **PostgreSQL processes that are not part of this project run on this
     machine.** They were left alone.
+
+## Found in Phase 2
+
+19. **A disabled account's access token works for up to 15 minutes.** Its refresh tokens are revoked at once, but there is no per-request status check. A cached check (as for tablets) would close it.
+20. **Registration answers 409 for an existing email**, so it can be used to test whether an email has an account. The sign-up limit slows it; it does not stop it.
+21. **Account lockout can be used to keep a known email from signing in.** Mitigated by the per-address limit; not eliminated.
+22. **Two browser tabs refreshing at the same moment can sign the person out.** Refreshes are serialised inside one tab, but not across tabs, and a reused refresh token is treated as theft.
+23. **Limiters are in memory and per node.** A restart clears them and two servers do not share them.
+24. **A doctor can see the family members' names and phases** (the dashboard payload carries them). The prompt says a doctor sees a read-only subset without family media; the dashboard needs a doctor variant. Phase 4 rebuilds the dashboard.
+25. **The audit list on the dashboard says "looked at" without saying at what.** The stored record has the path; the screen does not show it yet.
+26. **CSRF protection relies on `SameSite=Strict` and on the access token being a header.** There is no CSRF token. Safe for current browsers; worth a note in a security review.
+27. **Embedded PostgreSQL is fragile when its process is killed** (a stale `postmaster.pid`), and **`mvn` collides with OneDrive and the VS Code Java extension on `backend/target`.** Use `-Dsmaran.build.dir` and `-Dsmaran.local.pg.dir` outside OneDrive.
+28. **The 404 for "no approved doctor with that email" lets any caregiver test whether a doctor account exists.** It is the price of sharing by email.
+
 
 ## Files left untracked on purpose
 

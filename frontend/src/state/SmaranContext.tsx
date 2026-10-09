@@ -20,7 +20,7 @@ import {
   lastSynced,
   patients,
   reminders as remindersApi,
-  setTokens,
+  setDeviceToken,
   submitSession,
   syncNow,
 } from '../lib/api'
@@ -396,7 +396,7 @@ export function SmaranProvider({ children }: { children: ReactNode }) {
     async (result: RedeemResult) => {
       // A device token never refreshes: it is long-lived by design, and the
       // family revokes it rather than it expiring under her.
-      setTokens(result.deviceToken)
+      setDeviceToken(result.deviceToken)
 
       const { cognitiveProfile, ...record } = result.patient
       setPatientState(record)
