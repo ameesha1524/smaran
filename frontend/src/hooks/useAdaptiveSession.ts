@@ -38,8 +38,11 @@ export interface AdaptiveSession {
   recordCorrection(): void
   /** Hand back the camera element ref if you want face geometry in the mix. */
   videoRef: React.RefObject<HTMLVideoElement>
-  /** Finish and persist. `completionRate` is 0–1; there is no pass mark. */
-  finish(completionRate: number): Promise<{ milestone: boolean }>
+  /**
+   * Finish and persist. `completionRate` is 0–1; there is no pass mark. `trials` are the game's own
+   * record of what happened, in the shape its module (games/modules) scores.
+   */
+  finish(completionRate: number, trials?: unknown[]): Promise<{ milestone: boolean }>
   /** Whether the session has already been eased — for caregiver logs only. */
   easedCount: number
 }
@@ -180,15 +183,17 @@ export function useAdaptiveSession(gameType: GameType): AdaptiveSession {
   /* ---------------------------------------------------------------- finish */
 
   const finish = useCallback(
-    async (completionRate: number) => {
+    async (completionRate: number, trials?: unknown[]) => {
       const draft: SessionResultDraft = {
         gameType,
         startedAt: startedAt.current,
         durationMs: Date.now() - startedAt.current,
         completionRate: Math.max(0, Math.min(1, completionRate)),
         difficultyTier,
+        difficultyParams: { choices: axes.choiceCount, hints: axes.hintRichness, eased: easedCount },
         cognitiveLoadScore: Number(peakLoad.current.toFixed(3)),
         moodAtStart: moodToday ?? 'QUIET',
+        trials,
       }
 
       const outcome = await completeSession(draft)
@@ -206,7 +211,7 @@ export function useAdaptiveSession(gameType: GameType): AdaptiveSession {
 
       return outcome
     },
-    [completeSession, difficultyTier, gameType, moodToday, patient.id],
+    [completeSession, difficultyTier, axes.choiceCount, axes.hintRichness, easedCount, gameType, moodToday, patient.id],
   )
 
   return {

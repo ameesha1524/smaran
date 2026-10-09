@@ -49,7 +49,9 @@ class DemoSeedIT extends PostgresIntegrationTest {
                 .filter(s -> DemoDataSeeder.PATIENT_ID.equals(s.getPatientId()))
                 .mapToLong(s -> profiles.readingsOf(s).size())
                 .sum();
-        long observations = state.values().stream().mapToLong(TargetState::observations).sum();
+        // Sub-signals (working-memory span) are counted beside the domains, not among them.
+        long observations = java.util.stream.Stream.of("LANGUAGE", "VISUAL_SEMANTIC", "MOTOR", "AFFECTIVE", "TEMPORAL", "EXECUTIVE")
+                .mapToLong(d -> state.get(d).observations()).sum();
         assertEquals(readings, observations);
     }
 

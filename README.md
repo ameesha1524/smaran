@@ -52,6 +52,15 @@ Removing it ends its access on its next request and deletes none of her data.
 `python e2e/phase3_pairing_flow.py` drives this end to end (header explains the
 set-up).
 
+**Games to dashboards.** Every game sends what happened, round by round; the tablet scores it
+with the game's own module and says why in plain words; the server checks it, stores it, works
+out where she stands against her own usual, raises alerts, and updates an open dashboard within
+a second or two. `python e2e/phase4_games_flow.py` plays Duck Roll Call on the tablet's real
+screen and watches the family's dashboard follow, then plays offline and reconnects. To add a
+game: `docs/ADDING_A_GAME.md`. To have journal entries read for how they feel, set
+`ANTHROPIC_API_KEY` for the backend; without it they are simply not read, and her words are
+never stored either way.
+
 Tests: `npm test` in `frontend/`, `mvn verify` in `backend/`.
 
 Once paired, the PWA runs with **no backend at all**: every read falls back to

@@ -3,8 +3,11 @@ package org.smaran.web;
 import java.util.List;
 import org.smaran.config.AccessGuard;
 import org.smaran.config.AccessGuard.Capability;
+import org.smaran.config.JwtAuthFilter.SmaranPrincipal;
 import org.smaran.domain.ReminderSchedule;
+import org.smaran.service.AlertService;
 import org.smaran.service.AudioBiomarkerService;
+import org.smaran.service.DashboardEvents;
 import org.smaran.service.DashboardService;
 import org.smaran.service.ReminderService;
 import org.smaran.service.ReportService;
@@ -17,11 +20,19 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 /**
- * Everything the caregiver and the doctor read: the dashboard, the PDF, the
- * voice trend, and the reminder schedule.
+ * Everything the family and the doctor read: the dashboard, the trend, the
+ * sessions, the alerts, the PDF, the voice trend and, live, the stream that
+ * tells a dashboard something changed.
+ *
+ * A doctor reads all of it and changes none of it (the guard allows a doctor
+ * CLINICAL_READ on GET only). The dashboard a doctor gets is the same view
+ * without the family members around her. Raw trials and journal text are not
+ * served to anyone: they are stored, and nothing here reads them.
  */
 @RestController
 @RequestMapping("/api")
@@ -31,6 +42,8 @@ public class CaregiverController {
     private final ReportService reports;
     private final ReminderService reminders;
     private final AudioBiomarkerService biomarkers;
+    private final AlertService alerts;
+    private final DashboardEvents events;
     private final AccessGuard guard;
 
     public CaregiverController(
@@ -38,26 +51,74 @@ public class CaregiverController {
             ReportService reports,
             ReminderService reminders,
             AudioBiomarkerService biomarkers,
+            AlertService alerts,
+            DashboardEvents events,
             AccessGuard guard) {
         this.dashboard = dashboard;
         this.reports = reports;
         this.reminders = reminders;
         this.biomarkers = biomarkers;
+        this.alerts = alerts;
+        this.events = events;
         this.guard = guard;
     }
 
     @GetMapping("/caregiver/dashboard/{patientId}")
-    public Dto.DashboardSummary summary(@PathVariable String patientId) {
+    public Dto.DashboardView summary(@PathVariable String patientId) {
+        SmaranPrincipal who = guard.require(patientId, Capability.CLINICAL_READ);
+        return dashboard.view(patientId, "DOCTOR".equals(who.role()));
+    }
+
+    /** Her levels after each session, for the trend chart. */
+    @GetMapping("/caregiver/patients/{patientId}/timeseries")
+    public List<Dto.TimePoint> timeseries(@PathVariable String patientId, @RequestParam(defaultValue = "30") int days) {
         guard.require(patientId, Capability.CLINICAL_READ);
-        return dashboard.summary(patientId);
+        return dashboard.timeseries(patientId, days);
+    }
+
+    /** The latest sessions, each with what it said and why. Never the raw trials. */
+    @GetMapping("/caregiver/patients/{patientId}/sessions")
+    public List<Dto.SessionRow> sessions(@PathVariable String patientId, @RequestParam(defaultValue = "20") int limit) {
+        guard.require(patientId, Capability.CLINICAL_READ);
+        return dashboard.recentSessions(patientId, limit);
+    }
+
+    @GetMapping("/caregiver/patients/{patientId}/alerts")
+    public List<Dto.AlertView> alerts(@PathVariable String patientId, @RequestParam(defaultValue = "false") boolean all) {
+        guard.require(patientId, Capability.CLINICAL_READ);
+        return alerts.forPatient(patientId, !all).stream().map(DashboardService::alertView).toList();
+    }
+
+    /** How her journal entries have read, as signals only: never the words, and not the model's gist either. */
+    @GetMapping("/caregiver/patients/{patientId}/sentiment")
+    public List<Dto.SentimentPoint> sentiment(@PathVariable String patientId, @RequestParam(defaultValue = "30") int days) {
+        guard.require(patientId, Capability.CLINICAL_READ);
+        return dashboard.sentiment(patientId, days);
+    }
+
+    /**
+     * A live stream of "something changed" for this patient. Each event names what
+     * changed and nothing more; the dashboard then reads it through the endpoints
+     * above. The stream is re-authorised before every event it sends.
+     */
+    @GetMapping(value = "/caregiver/patients/{patientId}/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter events(@PathVariable String patientId) {
+        SmaranPrincipal who = guard.require(patientId, Capability.CLINICAL_READ);
+        return events.open(patientId, who);
+    }
+
+    /** Someone has seen it. A doctor cannot: acknowledging is the family's act. */
+    @PostMapping("/patients/{patientId}/alerts/{alertId}/acknowledge")
+    public Dto.AlertView acknowledge(@PathVariable String patientId, @PathVariable String alertId) {
+        SmaranPrincipal who = guard.require(patientId, Capability.CAREGIVE);
+        return DashboardService.alertView(alerts.acknowledge(patientId, alertId, who.userId()));
     }
 
     /** One page, for the eleven minutes a neurologist has. */
     @GetMapping("/report/patient/{patientId}")
     public ResponseEntity<byte[]> report(@PathVariable String patientId) {
-        guard.require(patientId, Capability.CLINICAL_READ);
-        Dto.DashboardSummary summary = dashboard.summary(patientId);
-        byte[] pdf = reports.render(summary);
+        SmaranPrincipal who = guard.require(patientId, Capability.CLINICAL_READ);
+        byte[] pdf = reports.render(dashboard.view(patientId, "DOCTOR".equals(who.role())));
         return ResponseEntity.ok()
                 .contentType(MediaType.APPLICATION_PDF)
                 .header(
@@ -73,12 +134,6 @@ public class CaregiverController {
     }
 
     /* -------------------------------------------------------- reminders */
-
-    @GetMapping("/reminder/{patientId}/schedule")
-    public List<Dto.ReminderDto> schedule(@PathVariable String patientId) {
-        guard.require(patientId, Capability.PLAY);
-        return reminders.forPatient(patientId).stream().map(CaregiverController::toDto).toList();
-    }
 
     @PutMapping("/reminder/{patientId}/schedule")
     public List<Dto.ReminderDto> replace(@PathVariable String patientId, @RequestBody List<Dto.ReminderDto> body) {
@@ -103,7 +158,7 @@ public class CaregiverController {
         reminders.testFor(body.patientId());
     }
 
-    private static Dto.ReminderDto toDto(ReminderSchedule r) {
+    static Dto.ReminderDto toDto(ReminderSchedule r) {
         return new Dto.ReminderDto(
                 r.getId(),
                 r.getPatientId(),

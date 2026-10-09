@@ -30,8 +30,10 @@ import {
 } from '../lib/api'
 import { mustWipeBefore, readPairing, savePairing, wipeLocalData, type DevicePairingMeta } from '../lib/devicePairing'
 import { applyRest, emptyGarden, phaseFor, water } from '../lib/gardenEngine'
-import { deriveGameRoute, emptyProfile, tapTargetFor, updateProfile } from '../lib/cognitiveProfile'
-import { readingsFor, type ReadingHistoryEntry } from '../lib/cognitiveMap'
+import { deriveGameRoute, emptyProfile, tapTargetFor } from '../lib/cognitiveProfile'
+import type { ReadingHistoryEntry } from '../lib/cognitiveMap'
+import { readingsFromContributions } from '../lib/scoring/legacy'
+import { processSession } from '../lib/sessionPipeline'
 import { DEMO_PATIENT_ID, demoPatient } from '../lib/demoData'
 import { cue, setTone, startAmbient, unlockAudio } from '../lib/ambient'
 import { getPack } from '../i18n/strings'
@@ -321,14 +323,15 @@ export function SmaranProvider({ children }: { children: ReactNode }) {
       setGardenState(outcome.next)
       await cacheSet(`garden:${patient.id}`, outcome.next)
 
-      // Resolved once, here, and sent as-is: the server folds in exactly the
-      // readings the device did, so the two profiles cannot diverge.
-      const readings = readingsFor(result)
-      const nextProfile = updateProfile(profileRef.current, { ...result, domainReadings: readings })
-      profileRef.current = nextProfile
-      setProfileState(nextProfile)
-      await cacheSet(PROFILE_KEY, nextProfile)
+      // The game's module scores its trials once, here. The same contributions move
+      // the profile on the glass and travel to the server in the envelope, so the two
+      // profiles are built from exactly the same numbers.
+      const processed = processSession(patient.id, profileRef.current, result)
+      profileRef.current = processed.profile
+      setProfileState(processed.profile)
+      await cacheSet(PROFILE_KEY, processed.profile)
 
+      const readings = readingsFromContributions(processed.contributions)
       setReadingHistory((prev) => {
         const cutoff = Date.now() - HISTORY_MAX_AGE_MS
         const next = [...prev.filter((h) => h.at > cutoff), { at: result.startedAt, readings }].slice(-KEEP_HISTORY)
@@ -336,19 +339,7 @@ export function SmaranProvider({ children }: { children: ReactNode }) {
         return next
       })
 
-      const { queued } = await submitSession({
-        patientId: patient.id,
-        gameType: result.gameType,
-        startedAt: new Date(result.startedAt).toISOString(),
-        durationMs: result.durationMs,
-        completionRate: result.completionRate,
-        difficultyTier: result.difficultyTier,
-        cognitiveLoadScore: result.cognitiveLoadScore,
-        moodAtStart: result.moodAtStart,
-        objectResults: result.objectResults,
-        domainReadings: readings,
-        metrics: result.metrics,
-      })
+      const { queued } = await submitSession(processed.envelope)
       // Watering is posted separately so the family WebSocket fires even when
       // the session row is the thing that failed to send.
       void gardenApi.water(patient.id, result.gameType)

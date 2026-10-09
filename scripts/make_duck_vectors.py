@@ -1,0 +1,117 @@
+"""Writes duck-roll-call-vectors.json: Duck Roll Call scored a third time, in Python, straight from the
+written rules (docs/MASTER_PROMPT.md A.5 and the comment at the top of
+frontend/src/games/modules/duckRollCall.ts), with no code shared with either implementation.
+
+The TypeScript module and the Java twin are each held to this file by a test, so neither can drift
+from the rules, or from the other, without a test failing. Run from the repo root:
+
+    python scripts/make_duck_vectors.py
+
+Expected values are written unrounded. The TypeScript module rounds its output (raw to 2 decimals,
+confidence to 3), and its test allows for that; the Java twin does not round and must match to 1e-9.
+"""
+import json
+import os
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def clamp(v, lo, hi):
+    return max(lo, min(hi, v))
+
+
+def trial(span, flash, clean=True, first_tap=None, completed=True, reached=None, wrong=0):
+    t = {
+        'spanLength': span,
+        'flashDurationMs': flash,
+        'correctFirstAttempt': clean,
+        'attempts': wrong + 1,
+        'firstErrorAtPosition': None if clean else 2,
+        'timeToFirstTapMs': first_tap,
+        'completedRound': completed,
+    }
+    if reached is not None:
+        t['positionReached'] = reached
+    return t
+
+
+def score(trials):
+    rounds = []
+    for t in trials:
+        if not isinstance(t, dict):
+            continue
+        span, flash = t.get('spanLength'), t.get('flashDurationMs')
+        if isinstance(span, bool) or isinstance(flash, bool):
+            continue
+        if not isinstance(span, (int, float)) or not isinstance(flash, (int, float)):
+            continue
+        completed = t.get('completedRound') is not False
+        clean = t.get('correctFirstAttempt') is True
+        reached = t.get('positionReached')
+        reached = reached if isinstance(reached, (int, float)) and not isinstance(reached, bool) else 0
+        tap = t.get('timeToFirstTapMs')
+        tap = tap if isinstance(tap, (int, float)) and not isinstance(tap, bool) else None
+        rounds.append((span, flash, clean, completed, reached, tap))
+    if not rounds:
+        return []
+    total = 0.0
+    for span, flash, clean, completed, reached, tap in rounds:
+        effective = (span if clean else span - 0.5) if completed else reached
+        bonus = 0.25 * clamp((2000 - flash) / 1200, 0, 1)
+        total += effective * (1 + bonus)
+    n = len(rounds)
+    raw = clamp(100 * (total / n) / 6, 0, 100)
+    confidence = max(0.15, min(1, n / 8))
+    out = [
+        {'target': 'EXECUTIVE', 'raw': raw, 'confidence': confidence},
+        {'target': 'WORKING_MEMORY_SPAN', 'raw': raw, 'confidence': confidence},
+    ]
+    taps = [r[5] for r in rounds if r[5] is not None]
+    if taps:
+        speed = sum(clamp((6000 - t) / 5000, 0, 1) for t in taps) / len(taps)
+        out.append({'target': 'VISUAL_SEMANTIC', 'raw': 100 * speed, 'confidence': 0.4 * confidence})
+    return out
+
+
+CASES = [
+    ('a clean span of 3 at the slow flash reads 50, at the confidence floor',
+     [trial(3, 2000)]),
+    ('a clean span of 6 at the fastest flash is over 100 and clamps to 100',
+     [trial(6, 800)] * 8),
+    ('a round with wrong taps counts as span minus one half',
+     [trial(4, 2000, clean=False, wrong=2)]),
+    ('a round left unfinished counts as the position she reached',
+     [trial(4, 2000, clean=False, completed=False, reached=2)]),
+    ('an unfinished round with no position counts as zero',
+     [trial(5, 2000, clean=False, completed=False)]),
+    ('the flash bonus is partial between 2000 and 800 ms',
+     [trial(4, 1400), trial(4, 1400)]),
+    ('a flash slower than 2000 ms earns no bonus and no penalty',
+     [trial(3, 3000)]),
+    ('retrieval speed: quick, slow, and beyond the window',
+     [trial(3, 2000, first_tap=1000), trial(3, 2000, first_tap=3500), trial(3, 2000, first_tap=9000)]),
+    ('no first tap recorded: no VISUAL_SEMANTIC contribution',
+     [trial(3, 2000, first_tap=None), trial(4, 2000, first_tap=None)]),
+    ('confidence grows with rounds and is full at eight',
+     [trial(3, 2000)] * 5),
+    ('a mixed sitting',
+     [trial(3, 2000, first_tap=1800), trial(3, 2000, first_tap=1500), trial(4, 1800, clean=False, wrong=1, first_tap=2600),
+      trial(4, 1800, first_tap=2200), trial(5, 1600, clean=False, wrong=3, first_tap=4100)]),
+    ('rows that are not rounds are skipped',
+     [trial(3, 2000), 'not a trial', None, 7, {'spanLength': 'three', 'flashDurationMs': 2000}, {'flashDurationMs': 2000}, trial(4, 2000)]),
+    ('nothing to score', []),
+    ('only garbage', ['x', None, {}, []]),
+]
+
+vectors = []
+for name, trials in CASES:
+    vectors.append({'name': name, 'trials': trials, 'expected': score(trials)})
+
+out = os.path.join(ROOT, 'duck-roll-call-vectors.json')
+with open(out, 'w', encoding='utf-8', newline='\n') as f:
+    json.dump({
+        '_note': 'Generated by scripts/make_duck_vectors.py from the written rules. Do not edit by hand.',
+        'vectors': vectors,
+    }, f, indent=2)
+    f.write('\n')
+print(f'wrote {len(vectors)} vectors to {out}')

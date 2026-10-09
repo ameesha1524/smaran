@@ -85,12 +85,21 @@ export const SESSION_ENVELOPE_FIELDS = [
   'engineVersion',
 ] as const satisfies readonly (keyof SessionEnvelope)[]
 
-/** A game plugs in by providing one of these and one registry entry. */
+/** A game plugs in by providing one of these and one registry entry (docs/ADDING_A_GAME.md). */
 export interface GameModule {
+  /** The registry id, like `duck-roll-call`. The server accepts sessions only for ids it lists. */
   id: string
+  /** The enum name routing and storage use, like `DUCK_ROLL_CALL`. */
+  gameType: string
   title: string
   route: string
   primaryDomains: DomainId[]
+  /** Every target this game may contribute to. The server refuses a contribution to any other. */
+  targets: TargetId[]
+  /** True when the game computes its own readings (Lotus Frog) and sends them as they are. */
+  precomputed?: boolean
+  /** A game no longer played, kept so its stored sessions still read. */
+  retired?: boolean
   scoreSession(trials: unknown[], ctx: { hourOfDay: number }): ScoreContribution[]
   markers?(trials: unknown[]): SessionMarkers | undefined
 }

@@ -69,6 +69,17 @@ public class CognitiveScoringService {
     }
 
     /**
+     * Fold one session's contributions into a profile. The same as {@link #apply}
+     * for a session that arrives with its contributions already made.
+     */
+    public Applied applyContributions(
+            String storedState, Map<String, Double> domainScores, List<ScoreContribution> contributions) {
+        Map<String, TargetState> state = stateOf(storedState, domainScores);
+        ScoringEngine.SessionResult result = ScoringEngine.applySession(state, contributions, config);
+        return new Applied(result.state(), LegacyScores.domainScoresFrom(result.state(), domainScores), result.readings());
+    }
+
+    /**
      * The engine state behind a profile. A profile saved before the engine
      * existed has only 0–1 scores; each becomes a level with no history, and
      * any domain the stored state is missing is seeded the same way.

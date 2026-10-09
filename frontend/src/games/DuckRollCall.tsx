@@ -4,7 +4,6 @@ import { useSmaran } from '../state/SmaranContext'
 import { STAGE_W, useStageScale } from '../scenes/PixelPond'
 import type { LanguageCode, SessionResultDraft } from '../lib/types'
 import { cue } from '../lib/ambient'
-import { duckReadings } from '../lib/cognitiveMap'
 import './games.css'
 
 /**
@@ -312,6 +311,14 @@ interface DuckRoundResult {
   attemptsBeforeCorrect: number
   sessionTimeOfDay: 'morning' | 'afternoon' | 'evening' | 'night'
   at: number
+  /** Where in the order her first wrong tap fell (1-based), or null if she had none. */
+  firstErrorAtPosition?: number | null
+  /** From the numbers vanishing to her first tap, or null if she never tapped. */
+  timeToFirstTapMs?: number | null
+  /** False for a round she left in the middle of. */
+  completedRound?: boolean
+  /** How many ducklings she had right when she left (only meaningful when not completed). */
+  positionReached?: number
 }
 
 const SPAN_KEY = 'smaran.duckRollCall.span'
@@ -401,6 +408,10 @@ export default function DuckRollCall() {
   const wrongTapsRef = useRef(0)
   const correctTapsRef = useRef(0)
   const finishedRef = useRef(false)
+  // What the round in progress has seen so far, for the trial it will become.
+  const recallStartedAt = useRef<number | null>(null)
+  const firstTapAt = useRef<number | null>(null)
+  const firstErrorPos = useRef<number | null>(null)
   const shakeTimer = useRef<number | null>(null)
   const flashTimer = useRef<number | null>(null)
 
@@ -421,6 +432,10 @@ export default function DuckRollCall() {
 
   const patch = useCallback((p: Partial<RoundState>) => setState((s) => ({ ...s, ...p })), [])
 
+  // finishSitting runs from an unmount cleanup holding an old closure; it must see the round as it is now.
+  const stateRef = useRef(state)
+  stateRef.current = state
+
   useEffect(
     () => () => {
       if (flashTimer.current) window.clearTimeout(flashTimer.current)
@@ -432,10 +447,31 @@ export default function DuckRollCall() {
   /* ------------------------------------------------------- one sitting */
 
   const finishSitting = useCallback(() => {
-    if (finishedRef.current || sittingRoundsRef.current.length === 0) return
+    if (finishedRef.current) return
+
+    // A round she was part-way through when she left is a round: it is recorded as
+    // unfinished, at the position she had reached, and not thrown away.
+    const live = stateRef.current
+    const rounds = [...sittingRoundsRef.current]
+    let leftMidRound = false
+    if (live.phase === 'recall' && firstTapAt.current !== null) {
+      leftMidRound = true
+      rounds.push({
+        spanLength: live.span,
+        flashDurationMs: live.flashMs,
+        wasCorrect: false,
+        attemptsBeforeCorrect: live.wrong,
+        sessionTimeOfDay: timeOfDay(),
+        at: Date.now(),
+        firstErrorAtPosition: firstErrorPos.current,
+        timeToFirstTapMs: recallStartedAt.current === null ? null : firstTapAt.current - recallStartedAt.current,
+        completedRound: false,
+        positionReached: live.next - 1,
+      })
+    }
+    if (rounds.length === 0) return
     finishedRef.current = true
 
-    const rounds = sittingRoundsRef.current
     const completionRate =
       rounds.reduce((sum, r) => sum + (r.wasCorrect ? 1 : Math.max(0.3, 1 - r.attemptsBeforeCorrect * 0.15)), 0) /
       rounds.length
@@ -449,24 +485,24 @@ export default function DuckRollCall() {
       startedAt: sittingStartedAt.current,
       durationMs: Date.now() - sittingStartedAt.current,
       completionRate: Number(completionRate.toFixed(3)),
+      completed: !leftMidRound,
+      abandoned: leftMidRound,
       difficultyTier,
+      difficultyParams: { span: finalSpan, flashMs: rounds[rounds.length - 1].flashDurationMs, errorless: errorless ? 1 : 0 },
       cognitiveLoadScore: Number(cognitiveLoadScore.toFixed(3)),
       moodAtStart: moodToday ?? 'QUIET',
-      // Span and flash are what make this a working-memory reading rather
-      // than a tidiness score — see duckReadings for the weighting.
-      domainReadings: duckReadings(rounds),
-      metrics: {
-        rounds: rounds.map(({ spanLength, flashDurationMs, wasCorrect, attemptsBeforeCorrect }) => ({
-          spanLength,
-          flashDurationMs,
-          wasCorrect,
-          attemptsBeforeCorrect,
-        })),
-        finalSpan,
-        breakdownSpan: breakdownSpan(historyRef.current),
-        errorless,
-        sessionTimeOfDay: rounds[rounds.length - 1].sessionTimeOfDay,
-      },
+      // Every round, in the fields Appendix A.5 names. The game's module (games/modules/duckRollCall)
+      // turns them into the scores, and the server scores them again to check.
+      trials: rounds.map((r) => ({
+        spanLength: r.spanLength,
+        flashDurationMs: r.flashDurationMs,
+        correctFirstAttempt: r.wasCorrect,
+        attempts: r.attemptsBeforeCorrect + 1,
+        firstErrorAtPosition: r.firstErrorAtPosition ?? null,
+        timeToFirstTapMs: r.timeToFirstTapMs ?? null,
+        completedRound: r.completedRound !== false,
+        positionReached: r.positionReached,
+      })),
     }
     void completeSession(draft)
   }, [completeSession, moodToday, errorless])
@@ -503,8 +539,14 @@ export default function DuckRollCall() {
       firstRound: false,
     })
 
+    recallStartedAt.current = null
+    firstTapAt.current = null
+    firstErrorPos.current = null
     if (flashTimer.current) window.clearTimeout(flashTimer.current)
-    flashTimer.current = window.setTimeout(() => patch({ phase: 'recall' }), state.flashMs)
+    flashTimer.current = window.setTimeout(() => {
+      recallStartedAt.current = Date.now()
+      patch({ phase: 'recall' })
+    }, state.flashMs)
   }
 
   const finishRound = (doneSlots: number[]) => {
@@ -515,6 +557,10 @@ export default function DuckRollCall() {
       attemptsBeforeCorrect: state.wrong,
       sessionTimeOfDay: timeOfDay(),
       at: Date.now(),
+      firstErrorAtPosition: firstErrorPos.current,
+      timeToFirstTapMs:
+        firstTapAt.current !== null && recallStartedAt.current !== null ? firstTapAt.current - recallStartedAt.current : null,
+      completedRound: true,
     }
     const history = [...historyRef.current, result]
     historyRef.current = history
@@ -543,6 +589,7 @@ export default function DuckRollCall() {
 
   const tap = (slot: number) => {
     if (state.phase !== 'recall' || state.done.includes(slot)) return
+    if (firstTapAt.current === null) firstTapAt.current = Date.now()
     if (state.nums[slot] === state.next) {
       correctTapsRef.current++
       const done = [...state.done, slot]
@@ -553,6 +600,7 @@ export default function DuckRollCall() {
       patch({ done, next: state.next + 1, wrongHere: 0 })
     } else {
       wrongTapsRef.current++
+      if (firstErrorPos.current === null) firstErrorPos.current = state.next
       patch({ wrong: state.wrong + 1, wrongHere: state.wrongHere + 1, shaking: slot })
       if (shakeTimer.current) window.clearTimeout(shakeTimer.current)
       shakeTimer.current = window.setTimeout(() => patch({ shaking: -1 }), 520)

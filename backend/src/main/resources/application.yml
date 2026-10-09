@@ -86,6 +86,12 @@ smaran:
     # which production already must set; set this to keep the two apart.
     # pepper:
 
+  journal:
+    # The model that reads a journal entry for how it feels, called from the server. With no
+    # key nothing is read, and the entry simply saves on her tablet.
+    api-key: ${ANTHROPIC_API_KEY:}
+    model: ${SMARAN_JOURNAL_MODEL:claude-haiku-4-5-20251001}
+
   scoring:
     # Which rule turns low readings into an alert: TWO_CONSECUTIVE (default),
     # SINGLE or CUSUM. Status on the dashboard is unaffected; see

@@ -38,6 +38,10 @@ export default function MorningRituals() {
   const [done, setDone] = useState(false)
   const slotRefs = useRef<(HTMLDivElement | null)[]>([])
 
+  // Every placement attempt, right or wrong, for the game's module to score (games/modules/morningRituals).
+  const attemptsRef = useRef<{ itemId: string; slotIndex: number; correct: boolean; latencyMs: number }[]>([])
+  const lastActionAt = useRef(Date.now())
+
   const placedCount = Object.keys(placed).length
   const allPlaced = placedCount === items.length
 
@@ -55,8 +59,12 @@ export default function MorningRituals() {
       const item = items.find((i) => i.id === itemId)
       if (!item) return
       session.recordTap()
+      const now = Date.now()
+      const correct = item.order === slotIndex + 1
+      attemptsRef.current.push({ itemId, slotIndex, correct, latencyMs: now - lastActionAt.current })
+      lastActionAt.current = now
 
-      if (item.order === slotIndex + 1) {
+      if (correct) {
         cue('petal')
         burst(point.x, point.y)
         setPlaced((p) => ({ ...p, [slotIndex]: itemId }))
@@ -111,7 +119,7 @@ export default function MorningRituals() {
   useEffect(() => {
     if (!allPlaced || done) return
     const id = window.setTimeout(async () => {
-      await session.finish(1)
+      await session.finish(1, [...attemptsRef.current])
       setDone(true)
     }, 2400)
     return () => window.clearTimeout(id)
@@ -119,6 +127,8 @@ export default function MorningRituals() {
   }, [allPlaced, done])
 
   const restart = () => {
+    attemptsRef.current = []
+    lastActionAt.current = Date.now()
     setPlaced({})
     setSelected(null)
     setDone(false)

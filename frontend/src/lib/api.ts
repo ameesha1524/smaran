@@ -8,10 +8,10 @@
 
 import type {
   AcousticVector,
-  DashboardSummary,
+  AlertView,
+  DashboardView,
   FamilyMember,
   GameRoute,
-  GameSession,
   GardenState,
   MeaningfulObject,
   DeviceMe,
@@ -19,9 +19,13 @@ import type {
   PairingCode,
   Patient,
   RedeemResult,
+  SentimentPoint,
+  SessionRow,
+  TimePoint,
   ReminderSchedule,
 } from './types'
 import { cacheGet, cacheSet, get, getAll, getDeviceFingerprint, put, remove } from './db'
+import type { SessionEnvelope } from './scoring/types'
 
 /**
  * Two kinds of credential, kept apart on purpose.
@@ -189,6 +193,26 @@ async function deviceRequest<T>(path: string, init: RequestInit = {}): Promise<T
   return (await res.json()) as T
 }
 
+/**
+ * A file of hers (a photograph, a voice) fetched with the tablet's token. An image or audio tag cannot send
+ * a token, so the file is fetched here and handed to the page as a blob. Returns null when it cannot be had,
+ * which is a normal answer for a tablet with no signal and nothing cached.
+ */
+export async function deviceBlob(path: string): Promise<Blob | null> {
+  const token = getDeviceToken()
+  if (!token || suspendedAndNotDueToProbe()) return null
+  try {
+    const res = await fetch(path, { headers: { Authorization: `Bearer ${token}` } })
+    if (res.status === 401 || res.status === 403) {
+      markSuspended()
+      return null
+    }
+    return res.ok ? await res.blob() : null
+  } catch {
+    return null
+  }
+}
+
 let refreshing: Promise<AuthSession | null> | null = null
 
 /**
@@ -322,16 +346,25 @@ export const games = {
 /* ----------------------------------------------------------- sessions */
 
 /**
- * Submit a finished session. If the network is gone the session is written to
- * `pending_sessions` and a Background Sync is requested; the garden still blooms
- * locally, and the family is notified whenever the signal returns.
+ * Send a finished session. If the network is gone (or the family has removed this
+ * tablet) it is written to `pending_sessions` and a Background Sync is requested;
+ * the garden still blooms locally, and the family hears whenever the signal returns.
+ *
+ * The server answers 200 even to a session it will not store, with the reason, and
+ * sending that one again would only be refused again, so it is not queued.
  */
-export async function submitSession(session: GameSession): Promise<{ queued: boolean }> {
+export interface BatchResponse {
+  accepted: number
+  duplicates: number
+  rejected: { clientSessionId: string | null; reason: string }[]
+}
+
+export async function submitSession(envelope: SessionEnvelope): Promise<{ queued: boolean }> {
   try {
-    await deviceRequest('/api/device/sessions', { method: 'POST', body: JSON.stringify(session) })
+    await deviceRequest<BatchResponse>('/api/device/sessions', { method: 'POST', body: JSON.stringify(envelope) })
     return { queued: false }
   } catch {
-    await put('pending_sessions', session)
+    await put('pending_sessions', envelope)
     await requestBackgroundSync()
     return { queued: true }
   }
@@ -424,7 +457,7 @@ export const reminders = {
 
 /** What asking for a dashboard can come to: the data, a refusal, or no server to ask. */
 export type DashboardResult =
-  | { kind: 'ok'; data: DashboardSummary }
+  | { kind: 'ok'; data: DashboardView }
   | { kind: 'denied'; status: 401 | 403 | 404 }
   | { kind: 'offline' }
 
@@ -481,17 +514,29 @@ export const caregiver = {
    */
   dashboard: async (patientId: string): Promise<DashboardResult> => {
     try {
-      const data = await request<DashboardSummary>(`/api/caregiver/dashboard/${patientId}`)
+      const data = await request<DashboardView>(`/api/caregiver/dashboard/${patientId}`)
       await cacheSet(`dashboard:${patientId}`, data)
       return { kind: 'ok', data }
     } catch (e) {
       if (e instanceof HttpError && (e.status === 401 || e.status === 403 || e.status === 404)) {
         return { kind: 'denied', status: e.status }
       }
-      const cached = await cacheGet<DashboardSummary>(`dashboard:${patientId}`)
+      const cached = await cacheGet<DashboardView>(`dashboard:${patientId}`)
       return cached ? { kind: 'ok', data: cached } : { kind: 'offline' }
     }
   },
+  /** How her journal entries have read: signals only, never her words. */
+  sentiment: (patientId: string, days = 30) =>
+    request<SentimentPoint[]>(`/api/caregiver/patients/${patientId}/sentiment?days=${days}`),
+  /** Her levels after each session, for the trend chart. */
+  timeseries: (patientId: string, days: number) =>
+    request<TimePoint[]>(`/api/caregiver/patients/${patientId}/timeseries?days=${days}`),
+  /** The latest sessions, each with what it said and why. Never the raw trials. */
+  sessions: (patientId: string, limit = 20) =>
+    request<SessionRow[]>(`/api/caregiver/patients/${patientId}/sessions?limit=${limit}`),
+  /** Someone has seen it. The alert stays in the record. A doctor cannot do this. */
+  acknowledge: (patientId: string, alertId: string) =>
+    request<AlertView>(`/api/patients/${patientId}/alerts/${alertId}/acknowledge`, { method: 'POST' }),
   /**
    * The doctor's PDF. A plain link cannot carry the sign-in header, so this
    * fetches it with the token and hands back the file.
@@ -608,7 +653,12 @@ export interface SyncOutcome {
  * open, and by the Service Worker's Background Sync handler.
  */
 export async function syncNow(patientId: string): Promise<SyncOutcome> {
-  const sessions = await getAll<GameSession>('pending_sessions')
+  const stored = await getAll<SessionEnvelope>('pending_sessions')
+  // A session queued by an earlier version has no envelope. The server could not read it, and
+  // it would be refused for ever, so it is let go.
+  const legacy = stored.filter((s) => !s.clientSessionId)
+  for (const s of legacy) await remove('pending_sessions', [s.patientId, s.startedAt])
+  const sessions = stored.filter((s) => !!s.clientSessionId)
   const vectors = await getAll<AcousticVector>('pending_vectors')
   const blooms = await getAll<{ id: number; patientId: string; gameType: string; at: string }>('pending_blooms')
 
@@ -618,7 +668,7 @@ export async function syncNow(patientId: string): Promise<SyncOutcome> {
   }
 
   try {
-    await deviceRequest('/api/device/sessions/batch', {
+    await deviceRequest<BatchResponse>('/api/device/sessions/batch', {
       method: 'POST',
       body: JSON.stringify({ sessions, vectors, blooms }),
     })
@@ -626,7 +676,8 @@ export async function syncNow(patientId: string): Promise<SyncOutcome> {
     return { sessions: sessions.length, vectors: vectors.length, blooms: blooms.length, ok: false }
   }
 
-  // Only clear what we actually sent — a session queued mid-sync survives.
+  // Only clear what we actually sent: a session queued mid-sync survives. Accepted, duplicate and
+  // refused sessions all leave the queue: the server has dealt with each, and says why for the last.
   for (const s of sessions) await remove('pending_sessions', [s.patientId, s.startedAt])
   for (const v of vectors) await remove('pending_vectors', [v.patientId, v.capturedAt])
   for (const b of blooms) await remove('pending_blooms', b.id)

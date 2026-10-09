@@ -13,6 +13,7 @@ import java.awt.Color;
 import java.io.ByteArrayOutputStream;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.List;
 import org.smaran.web.Dto;
 import org.springframework.stereotype.Service;
 
@@ -20,9 +21,13 @@ import org.springframework.stereotype.Service;
  * The page the caregiver puts in front of a doctor.
  *
  * It is one page on purpose. A neurologist with eleven minutes needs: who this
- * is, what has changed over thirty days, what Smaran noticed, and an explicit
- * statement of what this document is not. Everything else is noise that costs
- * the patient attention she cannot spare.
+ * is, how she has been playing, what the profile says about each domain and how
+ * sure it is, what Smaran noticed, and an explicit statement of what this
+ * document is not. Everything else costs the patient attention she cannot spare.
+ *
+ * Fed from the same view the dashboards read, so the page and the screen cannot
+ * disagree. It names no family member: the people who visit her are not the
+ * doctor's business.
  *
  * JasperReports is the eventual target (see resources/reports/cognitive-trend.jrxml
  * for the placeholder template). OpenPDF renders the same content today without
@@ -38,7 +43,7 @@ public class ReportService {
     private static final Color MUTED = new Color(0x55, 0x5a, 0x66);
     private static final Color RULE = new Color(0xDD, 0xDD, 0xD5);
 
-    public byte[] render(Dto.DashboardSummary summary) {
+    public byte[] render(Dto.DashboardView view) {
         Document doc = new Document(PageSize.A4, 54, 54, 54, 54);
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         PdfWriter.getInstance(doc, out);
@@ -51,11 +56,10 @@ public class ReportService {
 
         doc.add(paragraph("Smaran — cognitive engagement summary", h1, 4));
         doc.add(paragraph(
-                "%s · %s · addressed as %s · generated %s"
+                "%s · addressed as %s · generated %s"
                         .formatted(
-                                summary.patient().name(),
-                                nullSafe(summary.patient().region()),
-                                nullSafe(summary.patient().kinshipTerm()),
+                                view.patient().name(),
+                                nullSafe(view.patient().kinshipTerm()),
                                 STAMP.format(java.time.Instant.now())),
                 small,
                 16));
@@ -68,65 +72,53 @@ public class ReportService {
         row(
                 engagement,
                 body,
-                String.valueOf(summary.sessionsThisWeek()),
-                "%d of 4".formatted(summary.garden().bloomStage()),
-                String.valueOf(summary.garden().bloomCount()),
-                summary.lastActive() == null ? "—" : STAMP.format(summary.lastActive()));
+                String.valueOf(view.sessionsLast7Days()),
+                "%d of 4".formatted(view.garden().bloomStage()),
+                String.valueOf(view.garden().bloomCount()),
+                view.lastActive() == null ? "—" : STAMP.format(view.lastActive()));
         doc.add(engagement);
         doc.add(spacer());
 
         /* -------------------------------------------------- domains */
 
-        doc.add(paragraph("Cognitive domains over 30 days", h2, 6));
-        if (summary.domainTrend().size() >= 2) {
-            Dto.DomainPoint first = summary.domainTrend().get(0);
-            Dto.DomainPoint last = summary.domainTrend().get(summary.domainTrend().size() - 1);
-            PdfPTable domains = table(new float[] {2, 1, 1, 1});
-            header(domains, body, "Domain", "First reading", "Latest", "Change");
-            domainRow(domains, body, "Language & cultural identity", first.language(), last.language());
-            domainRow(domains, body, "Visual-semantic memory", first.visualSemantic(), last.visualSemantic());
-            domainRow(domains, body, "Motor & rhythm", first.motor(), last.motor());
-            domainRow(domains, body, "Affective & anxiety", first.affective(), last.affective());
-            domainRow(domains, body, "Temporal orientation", first.temporal(), last.temporal());
-            domainRow(domains, body, "Executive function & working memory",
-                    first.executiveFunction(), last.executiveFunction());
-            doc.add(domains);
-        } else {
-            doc.add(paragraph("Not enough sessions yet to show a trend.", body, 8));
+        doc.add(paragraph("Where she is, against her own usual", h2, 6));
+        PdfPTable domains = table(new float[] {3, 1, 1.2f, 1.2f, 1.6f});
+        header(domains, body, "Domain", "Level (0–100)", "Reading", "Confidence", "Recent");
+        for (Dto.DomainCard c : view.domains()) {
+            row(domains, body, c.label(), level(c), c.observations() == 0 ? "—" : c.status(),
+                    c.observations() == 0 ? "—" : "%d%%".formatted(Math.round(c.confidence() * 100)), trend(c.spark()));
+        }
+        for (Dto.DomainCard c : view.subSignals()) {
+            row(domains, body, c.label() + " (marker)", level(c), c.status(),
+                    "%d%%".formatted(Math.round(c.confidence() * 100)), trend(c.spark()));
+        }
+        doc.add(domains);
+        doc.add(paragraph(
+                "Each reading compares her latest session with her own recent average, in units of how much she "
+                        + "normally varies. Until a domain has about a dozen readings it is shown as stable whatever "
+                        + "it says, because a few sessions cannot tell a change from a bad day.",
+                small, 4));
+        if (view.markers() != null) {
+            StringBuilder m = new StringBuilder("Clinician markers: ");
+            if (view.markers().workingMemorySpan() != null) {
+                m.append("working-memory span %.0f. ".formatted(view.markers().workingMemorySpan()));
+            }
+            if (view.markers().inhibitionBreakdownTier() != null) {
+                m.append("inhibition breakdown tier %.0f. ".formatted(view.markers().inhibitionBreakdownTier()));
+            }
+            if (view.markers().trajectoryPrecisionMs() != null) {
+                m.append("trajectory precision %.0f ms. ".formatted(view.markers().trajectoryPrecisionMs()));
+            }
+            doc.add(paragraph(m.toString().strip(), body, 4));
         }
         doc.add(spacer());
 
-        /* ---------------------------------------------------- games */
+        /* --------------------------------------------------- voice */
 
-        doc.add(paragraph("By game", h2, 6));
-        PdfPTable games = table(new float[] {2, 1, 1, 1});
-        header(games, body, "Game", "Sessions", "Mean completion", "Direction");
-        for (Dto.GamePerformance g : summary.perGame()) {
-            row(
-                    games,
-                    body,
-                    readable(g.gameType().name()),
-                    String.valueOf(g.sessions()),
-                    "%d%%".formatted(Math.round(g.avgScore() * 100)),
-                    g.trend().toLowerCase());
-        }
-        doc.add(games);
-        doc.add(spacer());
-
-        /* --------------------------------------- recognition & voice */
-
-        doc.add(paragraph("Family recognition", h2, 6));
-        PdfPTable family = table(new float[] {2, 2});
-        header(family, body, "Person", "Current phase");
-        for (Dto.FamilyPhase f : summary.familyPhases()) {
-            row(family, body, f.name(), phaseName(f.phase()));
-        }
-        doc.add(family);
-        doc.add(spacer());
-
-        if (!summary.acousticTrend().isEmpty()) {
-            Dto.TrendPoint first = summary.acousticTrend().get(0);
-            Dto.TrendPoint last = summary.acousticTrend().get(summary.acousticTrend().size() - 1);
+        List<Dto.TrendPoint> acoustic = view.acousticTrend();
+        if (acoustic != null && !acoustic.isEmpty()) {
+            Dto.TrendPoint first = acoustic.get(0);
+            Dto.TrendPoint last = acoustic.get(acoustic.size() - 1);
             doc.add(paragraph("Voice acoustics (feature vectors only — no audio is recorded)", h2, 6));
             PdfPTable voice = table(new float[] {2, 1, 1});
             header(voice, body, "Feature", "First", "Latest");
@@ -139,10 +131,10 @@ public class ReportService {
         /* --------------------------------------------------- notes */
 
         doc.add(paragraph("What Smaran noticed", h2, 6));
-        if (summary.alerts().isEmpty()) {
-            doc.add(paragraph("Nothing stood out this month.", body, 8));
+        if (view.alerts().isEmpty()) {
+            doc.add(paragraph("Nothing stood out.", body, 8));
         } else {
-            for (Dto.DashboardAlertDto alert : summary.alerts()) {
+            for (Dto.AlertView alert : view.alerts()) {
                 doc.add(paragraph("• " + alert.message(), body, 4));
             }
         }
@@ -150,9 +142,9 @@ public class ReportService {
 
         doc.add(paragraph(
                 "Smaran is a cognitive stimulation and engagement tool. The figures above describe how this person "
-                        + "interacted with four games over thirty days. They are not a clinical assessment, they are not "
-                        + "diagnostic, and no threshold in this document has been validated against a clinical instrument. "
-                        + "They are offered as a record of engagement and as a prompt for questions.",
+                        + "interacted with its games. They are not a clinical assessment, they are not diagnostic, and no "
+                        + "threshold in this document has been validated against a clinical instrument. They are offered "
+                        + "as a record of engagement and as a prompt for questions.",
                 small,
                 0));
 
@@ -161,6 +153,18 @@ public class ReportService {
     }
 
     /* ------------------------------------------------------- fragments */
+
+    private static String level(Dto.DomainCard c) {
+        return c.observations() == 0 ? "—" : "%.0f".formatted(c.level());
+    }
+
+    /** "52 → 47" over the recent snapshots, or a dash when there is nothing to compare. */
+    private static String trend(List<Double> spark) {
+        if (spark == null || spark.size() < 2) {
+            return "—";
+        }
+        return "%.0f → %.0f".formatted(spark.get(0), spark.get(spark.size() - 1));
+    }
 
     private static Paragraph paragraph(String text, Font font, float spacingAfter) {
         Paragraph p = new Paragraph(text, font);
@@ -200,35 +204,6 @@ public class ReportService {
             cell.setPadding(5);
             table.addCell(cell);
         }
-    }
-
-    private static void domainRow(PdfPTable table, Font font, String label, double first, double last) {
-        long delta = Math.round((last - first) * 100);
-        row(
-                table,
-                font,
-                label,
-                "%d%%".formatted(Math.round(first * 100)),
-                "%d%%".formatted(Math.round(last * 100)),
-                (delta > 0 ? "+" : "") + delta + " pts");
-    }
-
-    private static String phaseName(int phase) {
-        return switch (phase) {
-            case 4 -> "4 — recalls unprompted";
-            case 3 -> "3 — identifies from choices";
-            case 2 -> "2 — recognises from initials";
-            default -> "1 — name shown";
-        };
-    }
-
-    private static String readable(String enumName) {
-        String[] parts = enumName.toLowerCase().split("_");
-        StringBuilder sb = new StringBuilder();
-        for (String part : parts) {
-            sb.append(Character.toUpperCase(part.charAt(0))).append(part.substring(1)).append(' ');
-        }
-        return sb.toString().trim();
     }
 
     private static String nullSafe(String s) {

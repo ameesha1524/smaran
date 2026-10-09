@@ -35,8 +35,11 @@ import org.smaran.repo.MeaningfulObjectRepository;
 import org.smaran.repo.MoodLogRepository;
 import org.smaran.repo.PatientRepository;
 import org.smaran.repo.ReminderScheduleRepository;
+import org.smaran.scoring.Contract;
+import org.smaran.scoring.DuckRollCallScoring;
+import org.smaran.scoring.LegacyScores;
 import org.smaran.service.CognitiveMap;
-import org.smaran.service.CognitiveProfileService;
+import org.smaran.service.SessionIngestionService;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Profile;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -72,13 +75,12 @@ public class DemoDataSeeder implements CommandLineRunner {
     private final org.springframework.core.env.Environment environment;
     private final FamilyMemberRepository family;
     private final MeaningfulObjectRepository objects;
-    private final GameSessionRepository sessions;
     private final CognitiveObjectResultRepository objectResults;
     private final MoodLogRepository moods;
     private final ReminderScheduleRepository reminders;
     private final PasswordEncoder encoder;
     private final ObjectMapper json;
-    private final CognitiveProfileService profiles;
+    private final SessionIngestionService ingestion;
 
     public DemoDataSeeder(
             PatientRepository patients,
@@ -88,13 +90,12 @@ public class DemoDataSeeder implements CommandLineRunner {
             org.springframework.core.env.Environment environment,
             FamilyMemberRepository family,
             MeaningfulObjectRepository objects,
-            GameSessionRepository sessions,
             CognitiveObjectResultRepository objectResults,
             MoodLogRepository moods,
             ReminderScheduleRepository reminders,
             PasswordEncoder encoder,
             ObjectMapper json,
-            CognitiveProfileService profiles) {
+            SessionIngestionService ingestion) {
         this.patients = patients;
         this.users = users;
         this.grants = grants;
@@ -102,13 +103,12 @@ public class DemoDataSeeder implements CommandLineRunner {
         this.environment = environment;
         this.family = family;
         this.objects = objects;
-        this.sessions = sessions;
         this.objectResults = objectResults;
         this.moods = moods;
         this.reminders = reminders;
         this.encoder = encoder;
         this.json = json;
-        this.profiles = profiles;
+        this.ingestion = ingestion;
     }
 
     @Override
@@ -196,8 +196,10 @@ public class DemoDataSeeder implements CommandLineRunner {
             if (day % 7 == 3 || day % 7 == 6) {
                 continue;
             }
-            Instant at = Instant.now().minus(Duration.ofDays(day)).minus(Duration.ofHours(2));
-            GameType type = rotation[day % rotation.length];
+          // Two sittings on a play day, the earlier one first, so history goes in oldest-first.
+          for (int slot = 1; slot >= 0; slot--) {
+            Instant at = Instant.now().minus(Duration.ofDays(day)).minus(Duration.ofHours(2L + slot * 5L));
+            GameType type = rotation[(day * 2 + slot) % rotation.length];
             double progress = (29 - day) / 29d;
             double steady = clamp(0.78 + (day % 3) * 0.04);
 
@@ -229,25 +231,66 @@ public class DemoDataSeeder implements CommandLineRunner {
                 }
             }
 
-            GameSession session = new GameSession();
-            session.setPatientId(PATIENT_ID);
-            session.setGameType(type);
-            session.setStartedAt(at);
-            session.setDurationMs(Duration.ofMinutes(9 + (day % 5)).toMillis());
-            session.setCompletionRate(completion);
-            session.setDifficultyTier(2);
-            session.setCognitiveLoadScore(0.4 + (day % 4) * 0.08);
-            session.setMoodAtStart(moodRotation[day % moodRotation.length]);
-            session.setDomainReadings(write(readings));
-            sessions.save(session);
-            // Oldest first, through the same update a real session takes, so the
-            // demo profile is what the engine makes of this history and not a
-            // hand-written number.
-            profiles.updateFromSession(session);
+            Mood sessionMood = moodRotation[(day + slot) % moodRotation.length];
+            List<Contract.ScoreContribution> contributions = new java.util.ArrayList<>();
+            readings.forEach((domain, r) -> contributions.add(new Contract.ScoreContribution(
+                    LegacyScores.DOMAIN_ID_OF.get(domain), r.score() * 100, r.confidence(),
+                    "Synthetic demo history.")));
+            // Duck Roll Call sends its rounds, and its scores are the ones the game's own rules give
+            // them, so the server re-scores these and agrees (and the span marker is real).
+            List<Object> trials = List.of();
+            Contract.SessionMarkers markers = null;
+            if (type == GameType.DUCK_ROLL_CALL) {
+                int span = progress < 0.4 ? 3 : progress < 0.75 ? 4 : 5;
+                List<Object> rounds = new java.util.ArrayList<>();
+                for (int r = 0; r < 4; r++) {
+                    boolean clean = (day + r) % 4 != 0;
+                    Map<String, Object> round = new LinkedHashMap<>();
+                    round.put("spanLength", span);
+                    round.put("flashDurationMs", 2000);
+                    round.put("correctFirstAttempt", clean);
+                    round.put("attempts", clean ? 1 : 2);
+                    round.put("firstErrorAtPosition", clean ? null : 2);
+                    round.put("timeToFirstTapMs", 1500 + 250 * r + (day % 3) * 200);
+                    round.put("completedRound", true);
+                    rounds.add(round);
+                }
+                trials = rounds;
+                contributions.clear();
+                DuckRollCallScoring.score(rounds).forEach(c -> contributions.add(
+                        new Contract.ScoreContribution(c.target(), c.raw(), c.confidence(), "Synthetic demo history.")));
+                markers = new Contract.SessionMarkers((double) span, null, null);
+            }
+
+            // Through the same door a tablet uses, oldest first, so the demo profile, its
+            // snapshots and its alerts are what the engine makes of this history and not
+            // a hand-written number.
+            String gameId = ingestion.gameIdOf(type).orElseThrow();
+            Contract.SessionEnvelope envelope = new Contract.SessionEnvelope(
+                    java.util.UUID.randomUUID().toString(),
+                    PATIENT_ID,
+                    gameId,
+                    at.toString(),
+                    Duration.ofMinutes(9 + (day % 5)).toMillis(),
+                    true,
+                    false,
+                    at.atZone(ZoneId.systemDefault()).getHour(),
+                    sessionMood.name(),
+                    new Contract.Difficulty(2, Map.of()),
+                    trials,
+                    contributions,
+                    markers,
+                    type == GameType.LOTUS_FROG,
+                    Contract.ENGINE_VERSION);
+            SessionIngestionService.Outcome outcome = ingestion.ingest(PATIENT_ID, null, envelope);
+            if (outcome.status() != SessionIngestionService.Status.ACCEPTED) {
+                throw new IllegalStateException("demo session refused: " + outcome.reason());
+            }
+            String sessionId = outcome.sessionId();
 
             MoodLog mood = new MoodLog();
             mood.setPatientId(PATIENT_ID);
-            mood.setMood(session.getMoodAtStart());
+            mood.setMood(sessionMood);
             mood.setAt(at);
             mood.setLocalHour(at.atZone(ZoneId.systemDefault()).getHour());
             moods.save(mood);
@@ -257,13 +300,15 @@ public class DemoDataSeeder implements CommandLineRunner {
                 // holds, which is what makes it a domain signal and not decay.
                 // (No current game produces per-object results — the Weaver's
                 // Loom did — so these stand in for that history in the demo.)
-                objectResults.save(objectResult(session.getId(), at, "Dhol", SemanticCluster.MUSICAL, progress > 0.45));
-                objectResults.save(objectResult(session.getId(), at, "Pepa", SemanticCluster.MUSICAL, progress > 0.6));
-                objectResults.save(objectResult(session.getId(), at, "Brass lamp", SemanticCluster.DAILY_LIFE, true));
-                objectResults.save(objectResult(session.getId(), at, "Tea leaves", SemanticCluster.FOOD, true));
-                objectResults.save(objectResult(session.getId(), at, "Kopou phool", SemanticCluster.NATURE, day % 5 != 0));
+                objectResults.save(objectResult(sessionId, at, "Dhol", SemanticCluster.MUSICAL, progress > 0.45));
+                objectResults.save(objectResult(sessionId, at, "Pepa", SemanticCluster.MUSICAL, progress > 0.6));
+                objectResults.save(objectResult(sessionId, at, "Brass lamp", SemanticCluster.DAILY_LIFE, true));
+                objectResults.save(objectResult(sessionId, at, "Tea leaves", SemanticCluster.FOOD, true));
+                objectResults.save(objectResult(sessionId, at, "Kopou phool", SemanticCluster.NATURE, day % 5 != 0));
             }
         }
+          }
+
     }
 
     private AppUser account(String id, String name, String email, Role role) {

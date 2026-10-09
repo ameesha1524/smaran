@@ -51,11 +51,11 @@ public class AccessGuard {
     public enum Capability {
         /** Set the patient up and manage her access: pairing, grants, her objects and family. */
         CAREGIVE,
-        /** What her own tablet does, and what her family can do on her behalf: play, sync, read her profile. */
-        PLAY,
         /** Read the dashboard, the report and the trends. The only thing a doctor may do. */
         CLINICAL_READ
     }
+
+    private static final java.time.Duration READ_COALESCE = java.time.Duration.ofSeconds(60);
 
     private final boolean openDemo;
     private final PatientRepository patients;
@@ -92,7 +92,7 @@ public class AccessGuard {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
         }
 
-        if (!roleMayDo(principal.role(), capability)) {
+        if (!roleMayDo(principal.role(), capability, isReadRequest())) {
             denied(principal, patientId, capability, "role");
             throw new ResponseStatusException(HttpStatus.FORBIDDEN);
         }
@@ -126,11 +126,23 @@ public class AccessGuard {
         return principal;
     }
 
+    /**
+     * The same rule as {@link #require}, as a yes or no, for a caller who is not in
+     * the current request (a live stream checking, before each event, that its
+     * reader still may). Not audited: nothing is being read by asking.
+     */
+    public boolean allows(SmaranPrincipal principal, String patientId, Capability capability) {
+        if (principal == null || !roleMayDo(principal.role(), capability, true)) {
+            return false;
+        }
+        return isTheirs(principal, patientId, capability);
+    }
+
     /** The role part of the rule, with no patient involved. */
-    static boolean roleMayDo(String role, Capability capability) {
+    static boolean roleMayDo(String role, Capability capability, boolean isRead) {
         return switch (role == null ? "" : role) {
             case "ADMIN", "CAREGIVER" -> true;
-            case "DOCTOR" -> capability == Capability.CLINICAL_READ && isReadRequest();
+            case "DOCTOR" -> capability == Capability.CLINICAL_READ && isRead;
             // A tablet has its own endpoints under /api/device and no business anywhere else.
             default -> false;
         };
@@ -176,7 +188,13 @@ public class AccessGuard {
             // bury the entries that matter. Its pairing and removal are audited.
             return;
         }
-        audit.record(actor, principal.userId(), isReadRequest() ? "PATIENT_READ" : "PATIENT_WRITE",
+        boolean read = isReadRequest();
+        // One look at a dashboard is several requests; it is recorded once a minute, not once each.
+        // Changes are always recorded.
+        if (read && audit.recordedWithin(principal.userId(), "PATIENT_READ", patientId, READ_COALESCE)) {
+            return;
+        }
+        audit.record(actor, principal.userId(), read ? "PATIENT_READ" : "PATIENT_WRITE",
                 patientId, resource(), ip(), Map.of("capability", capability.name()));
     }
 

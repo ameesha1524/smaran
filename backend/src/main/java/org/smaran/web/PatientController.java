@@ -59,15 +59,6 @@ public class PatientController {
         this.guard = guard;
     }
 
-    @GetMapping("/{id}/profile")
-    public Dto.PatientDto profile(@PathVariable String id) {
-        guard.require(id, Capability.PLAY);
-        Patient patient = patients.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
-        CognitiveProfile profile = profiles.forPatient(id);
-        return toDto(patient, profile);
-    }
-
     @PatchMapping("/{id}/profile")
     @Transactional
     public Dto.PatientDto update(@PathVariable String id, @RequestBody Dto.PatientPatch patch) {
@@ -105,12 +96,6 @@ public class PatientController {
 
     /* ----------------------------------------------------- object library */
 
-    @GetMapping("/{id}/objects")
-    public List<ObjectDto> listObjects(@PathVariable String id) {
-        guard.require(id, Capability.PLAY);
-        return objects.findByPatientId(id).stream().map(this::toObjectDto).toList();
-    }
-
     @PutMapping("/{id}/objects")
     @Transactional
     public List<ObjectDto> replaceObjects(@PathVariable String id, @RequestBody List<ObjectDto> body) {
@@ -127,22 +112,6 @@ public class PatientController {
                 })
                 .toList());
         return saved.stream().map(this::toObjectDto).toList();
-    }
-
-    /* --------------------------------------------------------- check-in */
-
-    @PostMapping("/{id}/mood")
-    @Transactional
-    public void checkIn(@PathVariable String id, @RequestBody Dto.MoodCheckIn body) {
-        guard.require(id, Capability.PLAY);
-        MoodLog log = new MoodLog();
-        log.setPatientId(id);
-        log.setMood(body.mood());
-        log.setAt(Instant.now());
-        log.setLocalHour(body.localHour() != null
-                ? body.localHour()
-                : Instant.now().atZone(ZoneId.systemDefault()).getHour());
-        moods.save(log);
     }
 
     /* --------------------------------------------------------- mapping */

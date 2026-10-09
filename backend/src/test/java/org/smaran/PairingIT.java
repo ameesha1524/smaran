@@ -371,11 +371,19 @@ class PairingIT extends ApiTest {
         // A session whose body claims to be someone else's is filed under the tablet's own patient.
         int before = count("game_session", b.patient().getId());
         int beforeA = count("game_session", a.patient().getId());
-        String payload = "{\"patientId\":\"" + a.patient().getId()
-                + "\",\"gameType\":\"KOI_ARE_JUMPING\",\"startedAt\":\"2026-10-07T04:30:00Z\"}";
+        String payload = session(a.patient().getId());
         assertEquals(200, call(post("/api/device/sessions").contentType(MediaType.APPLICATION_JSON).content(payload), tokenB));
         assertEquals(before + 1, count("game_session", b.patient().getId()), "filed under the tablet's own patient");
         assertEquals(beforeA, count("game_session", a.patient().getId()), "and not under the one named in the body");
+    }
+
+    /** A finished Koi session at an hour from now, as a tablet sends it. */
+    private static String session(String ignoredPatient) {
+        return "{\"clientSessionId\":\"" + UUID.randomUUID() + "\",\"gameId\":\"koi-are-jumping\",\"startedAt\":\""
+                + Instant.now().minusSeconds(3600) + "\",\"durationMs\":60000,\"completed\":true,\"abandoned\":false,"
+                + "\"hourOfDay\":9,\"moodAtStart\":\"QUIET\",\"difficulty\":{\"tier\":1,\"params\":{}},\"trials\":[],"
+                + "\"contributions\":[{\"target\":\"MOTOR\",\"raw\":70,\"confidence\":1,\"because\":\"x\"}],"
+                + "\"engineVersion\":\"1.0.0\"}";
     }
 
     private int count(String table, String patientId) {
@@ -459,7 +467,7 @@ class PairingIT extends ApiTest {
         assertEquals(200, call(post("/api/device/garden/water").contentType(MediaType.APPLICATION_JSON)
                 .content("{\"gameType\":\"KOI_ARE_JUMPING\"}"), token));
         assertEquals(200, call(post("/api/device/sessions").contentType(MediaType.APPLICATION_JSON)
-                .content("{\"gameType\":\"KOI_ARE_JUMPING\",\"startedAt\":\"2026-10-07T04:30:00Z\"}"), token));
+                .content(session(f.patient().getId())), token));
         int sessions = count("game_session", f.patient().getId());
 
         JsonNode listed = body(callFull(get("/api/patients/" + f.patient().getId() + "/devices"), f.ownerToken()));
@@ -517,8 +525,8 @@ class PairingIT extends ApiTest {
         for (String path : List.of(
                 "/api/patients", "/api/patients/" + pid + "/devices", "/api/patients/" + pid + "/audit",
                 "/api/patients/" + pid + "/doctor-grants", "/api/caregiver/dashboard/" + pid, "/api/report/patient/" + pid,
-                "/api/patient/" + pid + "/profile", "/api/garden/" + pid, "/api/family/" + pid + "/members",
-                "/api/game/" + pid + "/route", "/api/reminder/" + pid + "/schedule", "/api/biomarker/" + pid + "/trend",
+                "/api/caregiver/patients/" + pid + "/timeseries", "/api/caregiver/patients/" + pid + "/sessions",
+                "/api/caregiver/patients/" + pid + "/alerts", "/api/biomarker/" + pid + "/trend",
                 "/api/doctor/patients", "/api/admin/users", "/api/admin/audit")) {
             int s = call(get(path), token);
             assertEquals(403, s, "GET " + path);
@@ -540,7 +548,7 @@ class PairingIT extends ApiTest {
         Family f = family();
         String old = jwt.issueAccess(f.patient().getId(), "PATIENT", List.of(f.patient().getId()));
         assertEquals(401, call(get("/api/device/me"), old));
-        assertEquals(401, call(get("/api/garden/" + f.patient().getId()), old));
+        assertEquals(401, call(get("/api/caregiver/dashboard/" + f.patient().getId()), old));
         // A made-up token that merely looks like a device token.
         assertEquals(401, call(get("/api/device/me"), "sdt_" + UUID.randomUUID()));
     }

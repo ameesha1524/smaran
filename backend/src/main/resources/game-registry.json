@@ -1,0 +1,85 @@
+{
+  "_note": "The games Smaran knows. The server accepts a session only for a game listed here, and only with contributions to the targets listed for it. frontend/src/games/registry.ts is the device's copy; a test on each side holds the two to the same ids, titles and targets. Adding a game: docs/ADDING_A_GAME.md.",
+  "games": [
+    {
+      "id": "duck-roll-call",
+      "gameType": "DUCK_ROLL_CALL",
+      "title": "Duck Roll Call",
+      "route": "/game/duck-roll-call",
+      "primaryDomains": ["EXECUTIVE"],
+      "targets": ["EXECUTIVE", "WORKING_MEMORY_SPAN", "VISUAL_SEMANTIC"],
+      "precomputed": false,
+      "retired": false
+    },
+    {
+      "id": "grandmothers-tale",
+      "gameType": "GRANDMOTHERS_TALE",
+      "title": "Grandmother's Tale",
+      "route": "/game/grandmothers-tale",
+      "primaryDomains": ["LANGUAGE"],
+      "targets": ["LANGUAGE", "SUSTAINED_ATTENTION"],
+      "precomputed": false,
+      "retired": false
+    },
+    {
+      "id": "family-grove",
+      "gameType": "FAMILY_GROVE",
+      "title": "Family Grove",
+      "route": "/game/family-grove",
+      "primaryDomains": ["VISUAL_SEMANTIC"],
+      "targets": ["VISUAL_SEMANTIC", "AFFECTIVE"],
+      "precomputed": false,
+      "retired": false
+    },
+    {
+      "id": "morning-rituals",
+      "gameType": "MORNING_RITUALS",
+      "title": "Morning Rituals",
+      "route": "/game/morning-rituals",
+      "primaryDomains": ["TEMPORAL"],
+      "targets": ["TEMPORAL", "EXECUTIVE"],
+      "precomputed": false,
+      "retired": false
+    },
+    {
+      "id": "lotus-frog",
+      "gameType": "LOTUS_FROG",
+      "title": "The Lotus Frog",
+      "route": "/game/lotus-frog",
+      "primaryDomains": ["MOTOR"],
+      "targets": ["MOTOR", "VISUAL_SEMANTIC", "AFFECTIVE", "TEMPORAL"],
+      "precomputed": true,
+      "retired": false
+    },
+    {
+      "id": "koi-are-jumping",
+      "gameType": "KOI_ARE_JUMPING",
+      "title": "The Koi Are Jumping",
+      "route": "/game/koi-are-jumping",
+      "primaryDomains": ["MOTOR"],
+      "targets": ["MOTOR", "REACTION_SPEED"],
+      "precomputed": false,
+      "retired": false
+    },
+    {
+      "id": "journal",
+      "gameType": "JOURNAL",
+      "title": "Journal",
+      "route": "/journal",
+      "primaryDomains": ["AFFECTIVE"],
+      "targets": ["AFFECTIVE"],
+      "precomputed": false,
+      "retired": false
+    },
+    {
+      "id": "weavers-loom",
+      "gameType": "WEAVERS_LOOM",
+      "title": "Weaver's Loom",
+      "route": "/game/weavers-loom",
+      "primaryDomains": ["VISUAL_SEMANTIC"],
+      "targets": ["VISUAL_SEMANTIC", "MOTOR"],
+      "precomputed": false,
+      "retired": true
+    }
+  ]
+}

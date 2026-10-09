@@ -60,7 +60,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> {
                     // /me needs a sign-in; the rest of /api/auth is how you get one.
                     auth.requestMatchers("/api/auth/me").authenticated();
-                    auth.requestMatchers("/api/auth/**", "/actuator/health", "/ws/**").permitAll();
+                    auth.requestMatchers("/api/auth/**", "/actuator/health").permitAll();
                     // Spring re-dispatches a thrown status to /error without the
                     // caller's token. Left closed, every 404 and 401 above came
                     // back as a bare 403 — including the deliberate "404, not

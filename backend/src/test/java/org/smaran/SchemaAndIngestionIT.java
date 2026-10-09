@@ -13,18 +13,15 @@ import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.smaran.domain.CognitiveProfile;
-import org.smaran.domain.DomainReading;
-import org.smaran.domain.Enums.GameType;
-import org.smaran.domain.Enums.Mood;
 import org.smaran.domain.Patient;
 import org.smaran.repo.GameSessionRepository;
 import org.smaran.repo.PatientRepository;
 import org.smaran.scoring.Contract.TargetState;
 import org.smaran.service.CognitiveProfileService;
-import org.smaran.service.SessionService;
+import org.smaran.service.SessionIngestionService;
+import org.smaran.support.Envelopes;
 import org.smaran.support.PostgresIntegrationTest;
 import org.smaran.support.TestPostgres;
-import org.smaran.web.Dto;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -46,7 +43,7 @@ class SchemaAndIngestionIT extends PostgresIntegrationTest {
     GameSessionRepository sessions;
 
     @Autowired
-    SessionService sessionService;
+    SessionIngestionService ingestion;
 
     @Autowired
     CognitiveProfileService profiles;
@@ -56,12 +53,6 @@ class SchemaAndIngestionIT extends PostgresIntegrationTest {
         p.setName("Synthetic Patient " + UUID.randomUUID().toString().substring(0, 8));
         p.setKinshipTerm("Aaita");
         return patients.save(p);
-    }
-
-    private static Dto.SessionSubmission koi(String patientId, Instant at, double motor) {
-        return new Dto.SessionSubmission(
-                patientId, GameType.KOI_ARE_JUMPING, at, 60_000, 0.5, 1, 0.2, Mood.QUIET, null,
-                Map.of("motor", new DomainReading(motor, 1)), Map.of("rounds", 6));
     }
 
     @Test
@@ -76,7 +67,7 @@ class SchemaAndIngestionIT extends PostgresIntegrationTest {
     void migrationsApplied() {
         List<String> versions = jdbc.queryForList(
                 "select version from flyway_schema_history where success order by installed_rank", String.class);
-        assertEquals(List.of("1", "2", "3", "4"), versions);
+        assertEquals(List.of("1", "2", "3", "4", "5"), versions);
         Integer failed = jdbc.queryForObject(
                 "select count(*) from flyway_schema_history where not success", Integer.class);
         assertEquals(0, failed);
@@ -117,10 +108,10 @@ class SchemaAndIngestionIT extends PostgresIntegrationTest {
     @DisplayName("a session moves the stored profile through the engine, exactly once")
     void sessionReachesProfile() {
         Patient p = newPatient();
-        Instant at = Instant.now().truncatedTo(ChronoUnit.MILLIS);
+        Instant at = Instant.now().minusSeconds(3600).truncatedTo(ChronoUnit.MILLIS);
 
-        SessionService.Accepted first = sessionService.submit(koi(p.getId(), at, 1.0), null);
-        assertFalse(first.duplicate());
+        var first = Envelopes.koi(p.getId(), at, 100);
+        assertEquals(SessionIngestionService.Status.ACCEPTED, ingestion.ingest(p.getId(), null, first).status());
 
         CognitiveProfile profile = profiles.forPatient(p.getId());
         Map<String, TargetState> state = profiles.scoringState(profile);
@@ -130,8 +121,7 @@ class SchemaAndIngestionIT extends PostgresIntegrationTest {
         assertEquals(0.625, profiles.scores(profile).get("motor"));
 
         // The same sitting again, as a replayed offline queue would send it.
-        SessionService.Accepted replay = sessionService.submit(koi(p.getId(), at, 1.0), null);
-        assertTrue(replay.duplicate());
+        assertEquals(SessionIngestionService.Status.DUPLICATE, ingestion.ingest(p.getId(), null, first).status());
         assertEquals(1, profiles.scoringState(profiles.forPatient(p.getId())).get("MOTOR").observations());
         assertEquals(1, sessions.countByPatientId(p.getId()));
     }
@@ -140,9 +130,9 @@ class SchemaAndIngestionIT extends PostgresIntegrationTest {
     @DisplayName("the engine state survives the database: a second session sees the first")
     void stateRoundTripsThroughPostgres() {
         Patient p = newPatient();
-        Instant at = Instant.now().truncatedTo(ChronoUnit.MILLIS);
-        sessionService.submit(koi(p.getId(), at, 0.8), null);
-        sessionService.submit(koi(p.getId(), at.plusSeconds(3600), 0.6), null);
+        Instant at = Instant.now().minusSeconds(7200).truncatedTo(ChronoUnit.MILLIS);
+        ingestion.ingest(p.getId(), null, Envelopes.koi(p.getId(), at, 80));
+        ingestion.ingest(p.getId(), null, Envelopes.koi(p.getId(), at.plusSeconds(3600), 60));
 
         TargetState motor = profiles.scoringState(profiles.forPatient(p.getId())).get("MOTOR");
         assertEquals(2, motor.observations());

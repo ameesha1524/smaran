@@ -9,6 +9,7 @@ import java.time.ZoneId;
 import java.util.List;
 import org.smaran.config.AccessGuard;
 import org.smaran.config.JwtAuthFilter.SmaranPrincipal;
+import org.smaran.scoring.Contract;
 import org.smaran.domain.Enums.Mood;
 import org.smaran.domain.FamilyMember;
 import org.smaran.domain.MoodLog;
@@ -17,21 +18,24 @@ import org.smaran.domain.ReminderSchedule;
 import org.smaran.repo.MeaningfulObjectRepository;
 import org.smaran.repo.MoodLogRepository;
 import org.smaran.repo.PatientRepository;
+import org.smaran.journal.JournalService;
+import org.smaran.journal.JournalSignals;
 import org.smaran.service.AudioBiomarkerService;
+import org.smaran.service.CognitiveAdaptationService;
 import org.smaran.service.CognitiveProfileService;
 import org.smaran.service.DashboardService;
 import org.smaran.service.FamilyGroveAdaptationService;
 import org.smaran.service.FederatedAggregationService;
 import org.smaran.service.GardenStateService;
 import org.smaran.service.ReminderService;
-import org.smaran.service.SessionService;
+import org.smaran.service.SessionIngestionService;
 import org.smaran.service.StorageService;
-import org.smaran.service.SyncService;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -39,7 +43,6 @@ import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -68,8 +71,7 @@ public class DeviceController {
     private final CognitiveProfileService profiles;
     private final GardenStateService gardens;
     private final DashboardService dashboard;
-    private final SessionService sessions;
-    private final SyncService sync;
+    private final SessionIngestionService ingestion;
     private final AudioBiomarkerService biomarkers;
     private final FederatedAggregationService federated;
     private final FamilyGroveAdaptationService grove;
@@ -77,6 +79,8 @@ public class DeviceController {
     private final MeaningfulObjectRepository objects;
     private final MoodLogRepository moods;
     private final StorageService storage;
+    private final CognitiveAdaptationService adaptation;
+    private final JournalService journal;
 
     public DeviceController(
             AccessGuard guard,
@@ -84,22 +88,22 @@ public class DeviceController {
             CognitiveProfileService profiles,
             GardenStateService gardens,
             DashboardService dashboard,
-            SessionService sessions,
-            SyncService sync,
+            SessionIngestionService ingestion,
             AudioBiomarkerService biomarkers,
             FederatedAggregationService federated,
             FamilyGroveAdaptationService grove,
             ReminderService reminders,
             MeaningfulObjectRepository objects,
             MoodLogRepository moods,
-            StorageService storage) {
+            StorageService storage,
+            CognitiveAdaptationService adaptation,
+            JournalService journal) {
         this.guard = guard;
         this.patients = patients;
         this.profiles = profiles;
         this.gardens = gardens;
         this.dashboard = dashboard;
-        this.sessions = sessions;
-        this.sync = sync;
+        this.ingestion = ingestion;
         this.biomarkers = biomarkers;
         this.federated = federated;
         this.grove = grove;
@@ -107,6 +111,8 @@ public class DeviceController {
         this.objects = objects;
         this.moods = moods;
         this.storage = storage;
+        this.adaptation = adaptation;
+        this.journal = journal;
     }
 
     /** The patient this tablet is paired to. The only way any method here learns who she is. */
@@ -187,41 +193,44 @@ public class DeviceController {
 
     /* -------------------------------------------------------- sessions */
 
-    public record SessionAck(String id, boolean duplicate) {
-    }
-
     /**
      * Always 200, even for a duplicate: a tablet re-sending a week-old queue on a
-     * flaky connection must not get an error it would then retry forever.
+     * flaky connection must not get an error it would then retry forever. A
+     * session the server will not accept is answered with the reason and not
+     * stored; the tablet drops it from its queue, because sending it again would
+     * be refused again.
      */
     @PostMapping("/sessions")
-    public SessionAck submit(
-            @RequestBody Dto.SessionSubmission body,
-            @RequestHeader(value = "X-Smaran-Session", required = false) String sessionKey) {
-        String id = patientId();
-        Dto.SessionSubmission mine = ownedBy(id, body);
-        if (mine.startedAt() == null || mine.gameType() == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "A session needs a game and a start time.");
-        }
-        SessionService.Accepted accepted = sessions.submit(mine, sessionKey);
-        return new SessionAck(accepted.session().getId(), accepted.duplicate());
+    public Dto.BatchResponse submit(@RequestBody Contract.SessionEnvelope body) {
+        SmaranPrincipal device = guard.requireDevice();
+        return respond(ingestion.ingestBatch(device.patientIds().get(0), device.userId(), List.of(body)));
     }
 
-    /** What a tablet sends after being offline: its queue of sessions, voice features and waterings. */
+    /** What a tablet sends after being offline: its queue of finished sessions and voice features. */
     public record SyncBatch(
-            List<Dto.SessionSubmission> sessions, List<Dto.AcousticVectorDto> vectors, List<Dto.WaterRequest> blooms) {
+            List<Contract.SessionEnvelope> sessions, List<Dto.AcousticVectorDto> vectors, List<Dto.WaterRequest> blooms) {
     }
 
     @PostMapping("/sessions/batch")
-    public Dto.SyncResponse batch(@RequestBody SyncBatch body) {
-        String id = patientId();
-        List<Dto.SessionSubmission> mine = body.sessions() == null
-                ? List.of()
-                : body.sessions().stream().map(s -> ownedBy(id, s)).toList();
-        List<Dto.AcousticVectorDto> vectors = body.vectors() == null
-                ? List.of()
-                : body.vectors().stream().map(v -> ownedBy(id, v)).toList();
-        return sync.merge(new Dto.SyncRequest(id, mine, vectors, body.blooms()));
+    public Dto.BatchResponse batch(@RequestBody SyncBatch body) {
+        SmaranPrincipal device = guard.requireDevice();
+        String id = device.patientIds().get(0);
+        if (body.vectors() != null) {
+            body.vectors().forEach(v -> biomarkers.store(ownedBy(id, v)));
+        }
+        return respond(ingestion.ingestBatch(id, device.userId(), body.sessions()));
+    }
+
+    private Dto.BatchResponse respond(SessionIngestionService.BatchResult r) {
+        List<Dto.Rejection> rejected = r.outcomes().stream()
+                .filter(o -> o.status() == SessionIngestionService.Status.REJECTED)
+                .map(o -> new Dto.Rejection(o.clientSessionId(), o.reason()))
+                .toList();
+        return new Dto.BatchResponse(
+                r.count(SessionIngestionService.Status.ACCEPTED),
+                r.count(SessionIngestionService.Status.DUPLICATE),
+                rejected,
+                dashboard.toGardenDto(r.garden()));
     }
 
     @PostMapping("/biomarker/vector")
@@ -235,17 +244,54 @@ public class DeviceController {
         return federated.receive(new Dto.GradientUpload(body.deviceId(), id, body.modelVersion(), body.cipher()));
     }
 
-    /** Whatever patient a tablet's body names, it is hers. */
-    private static Dto.SessionSubmission ownedBy(String id, Dto.SessionSubmission b) {
-        return new Dto.SessionSubmission(
-                id, b.gameType(), b.startedAt(), b.durationMs(), b.completionRate(), b.difficultyTier(),
-                b.cognitiveLoadScore(), b.moodAtStart(), b.objectResults(), b.domainReadings(), b.metrics());
-    }
-
     private static Dto.AcousticVectorDto ownedBy(String id, Dto.AcousticVectorDto b) {
         return new Dto.AcousticVectorDto(
                 id, b.sessionId(), b.capturedAt(), b.jitter(), b.shimmer(), b.pauseDurationAvg(), b.speechRate(),
                 b.phonationRatio());
+    }
+
+    /* ----------------------------------------------------------- journal */
+
+    public record JournalEntry(String text, Integer localHour) {
+    }
+
+    public record JournalReading(JournalSignals signals) {
+    }
+
+    /**
+     * Her journal entry, read for how it feels. The text is sent for this one request and is
+     * never stored; only the signals are. With no model configured the answer is
+     * {@code {"signals": null}} and nothing is stored.
+     */
+    @PostMapping("/journal/analyse")
+    public JournalReading analyse(@RequestBody JournalEntry body) {
+        SmaranPrincipal device = guard.requireDevice();
+        return new JournalReading(
+                journal.analyse(device.patientIds().get(0), device.userId(), body.text(), body.localHour()).orElse(null));
+    }
+
+    /* ---------------------------------------------------- reactive ease */
+
+    /**
+     * One scalar load score and three proxy numbers derived on the tablet from
+     * face-mesh geometry. No video, no landmarks and no audio reach this
+     * endpoint, which is what makes the privacy claim architectural.
+     */
+    @PostMapping("/cognitive/sample")
+    public void sample(@RequestBody Dto.LoadSample body) {
+        adaptation.sample(patientId(), body);
+    }
+
+    /** The ease events for a session. Whose session it is is read from the token, not from the id. */
+    @GetMapping(value = "/cognitive/stream/{sessionId}", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public reactor.core.publisher.Flux<ServerSentEvent<Dto.DifficultyEaseEvent>> stream(@PathVariable String sessionId) {
+        patientId();
+        return adaptation.stream(sessionId)
+                .map(event -> ServerSentEvent.<Dto.DifficultyEaseEvent>builder()
+                        .event(event.loadScore() < 0 ? "heartbeat" : "ease")
+                        .data(event)
+                        .retry(Duration.ofSeconds(5))
+                        .build());
     }
 
     /* ---------------------------------------------------------- check-in */

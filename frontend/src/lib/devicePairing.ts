@@ -1,4 +1,5 @@
 import { clearPatientData } from './db'
+import { forgetMedia } from './media'
 
 /**
  * What a tablet remembers about its own pairing, and what it does with her
@@ -63,6 +64,7 @@ export function mustWipeBefore(previous: DevicePairingMeta | null, nextPatientId
  */
 export async function wipeLocalData(): Promise<void> {
   await clearPatientData()
+  forgetMedia()
 
   const doomed: string[] = []
   for (let i = 0; i < localStorage.length; i++) {

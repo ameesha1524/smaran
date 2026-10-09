@@ -44,12 +44,6 @@ public class FamilyController {
         this.guard = guard;
     }
 
-    @GetMapping("/{patientId}/members")
-    public List<Dto.FamilyMemberDto> members(@PathVariable String patientId) {
-        guard.require(patientId, Capability.PLAY);
-        return grove.forPatient(patientId).stream().map(this::toDto).toList();
-    }
-
     @PostMapping(value = "/{patientId}/member", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public Dto.FamilyMemberDto add(
             @PathVariable String patientId,
@@ -75,20 +69,6 @@ public class FamilyController {
         // at whatever phase the rest of the tree has climbed to.
         int startingPhase = profiles.forPatient(patientId).getStartingPhase();
         return toDto(grove.add(member, startingPhase));
-    }
-
-    /**
-     * One answer from Family Grove. A correct one advances this member's phase
-     * (after three fluent recognitions) and tells them to record a new voice
-     * note — which is the content she will hear next time she opens the grove.
-     */
-    @PostMapping("/{patientId}/member/{memberId}/result")
-    public Dto.FamilyMemberDto result(
-            @PathVariable String patientId,
-            @PathVariable String memberId,
-            @RequestBody Dto.RecognitionResult body) {
-        guard.require(patientId, Capability.PLAY);
-        return toDto(grove.recordResult(patientId, memberId, body.correct(), body.latencyMs()));
     }
 
     private Dto.FamilyMemberDto toDto(FamilyMember m) {
