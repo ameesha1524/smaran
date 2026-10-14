@@ -1,0 +1,57 @@
+# Dependabot: weekly update pull requests, grouped so a week is a handful of PRs, not thirty.
+# Security advisories open their own PRs immediately, whatever the schedule.
+version: 2
+updates:
+  - package-ecosystem: maven
+    directory: /backend
+    schedule: { interval: weekly, day: monday }
+    open-pull-requests-limit: 5
+    groups:
+      spring-boot:
+        patterns: ["org.springframework.boot*", "org.springframework*"]
+      minor-and-patch:
+        update-types: [minor, patch]
+    labels: [dependencies]
+
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule: { interval: weekly, day: monday }
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+    labels: [dependencies]
+
+  - package-ecosystem: npm
+    directory: /e2e/playwright
+    schedule: { interval: weekly, day: monday }
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+    labels: [dependencies]
+
+  - package-ecosystem: pip
+    directory: /data-science
+    schedule: { interval: weekly, day: monday }
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+    labels: [dependencies]
+
+  - package-ecosystem: docker
+    directory: /backend
+    schedule: { interval: weekly, day: monday }
+    labels: [dependencies]
+
+  - package-ecosystem: docker
+    directory: /frontend
+    schedule: { interval: weekly, day: monday }
+    labels: [dependencies]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly, day: monday }
+    groups:
+      actions:
+        patterns: ["*"]
+    labels: [dependencies]

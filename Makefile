@@ -14,8 +14,10 @@
 #                       evaluation on what the API exported (needs the backend's tests)
 #   make ds-fixture     rewrite the committed test cohort and the shared vectors
 #
-# `demo` and `e2e` are declared here so the names are stable, and fail
-# loudly until the phase that builds them lands. See docs/PLAN.md.
+#   make e2e           the compose stack, the smoke test, the Playwright browser tests
+#   make rehearse      deploy, rollback, backup and restore, rehearsed on this machine (Docker)
+#
+# `demo` is declared here so the name is stable, and fails loudly until the phase that builds it lands.
 #
 # On Windows without make, run the commands under each target by hand, or
 # install make (`winget install GnuWin32.Make`).
@@ -25,7 +27,7 @@ NPM ?= npm
 
 .PHONY: baseline test verify frontend-install frontend-check frontend-test frontend-build
 .PHONY: backend-test backend-verify db dev-backend dev-backend-nodocker dev-frontend golden
-.PHONY: demo ds ds-small ds-test ds-export ds-fixture e2e
+.PHONY: demo ds ds-small ds-test ds-export ds-fixture e2e rehearse
 
 PYTHON ?= python
 DS = data-science
@@ -93,5 +95,16 @@ ds-fixture:
 	cd $(DS) && PYTHONPATH=src $(PYTHON) src/simulate.py --fixture --out ../backend/src/test/resources/cohort
 	$(PYTHON) scripts/make_sundowning_vectors.py
 
+# The stack in docker-compose.yml, then the smoke test and the browser tests against it (Phase 6). The full
+# showcase walk-through arrives in Phase 7. Needs Docker, jq, and `npm ci && npx playwright install chromium`
+# in e2e/playwright.
 e2e:
-	@echo "make e2e is not built yet: the Playwright suite arrives in Phase 7." && exit 1
+	docker compose up --build -d --wait --wait-timeout 300
+	BASE_URL=http://localhost:8081 SMOKE_PASSWORD=local-smoke-password-not-a-secret deploy/smoke.sh
+	cd e2e/playwright && BASE_URL=http://localhost:8081 npx playwright test
+
+# The deploy, rollback, backup and restore rehearsal CI runs. Builds the images first (about five minutes cold).
+rehearse:
+	docker build -t ghcr.io/local/smaran-backend:good backend
+	docker build -t ghcr.io/local/smaran-frontend:good frontend
+	deploy/rehearse.sh

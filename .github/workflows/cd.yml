@@ -1,0 +1,177 @@
+# Continuous delivery: what passes ci on master goes to the VM.
+#
+#   build-and-push   builds both images from the commit ci passed on and pushes them to GHCR
+#                    as sha-<7 characters> and latest
+#   deploy           in the protected `production` environment: copies deploy/ to the VM, runs
+#                    deploy.sh there (pull, up, wait for health, smoke test, put the old tag back
+#                    if either fails), then checks the public address from outside
+#   notify           says what happened in the run summary and opens an issue when it failed
+#
+# The deploy job is off until the repository variable DEPLOY_ENABLED is "true" (Settings > Secrets and
+# variables > Actions > Variables). That is deliberate: pushing the images needs no setup, deploying needs a
+# VM and these secrets, and a missing secret should not turn every merge red. docs/RUNBOOK.md has the setup.
+#
+#   secrets   VM_HOST  VM_USER  VM_SSH_KEY  DOMAIN
+#   variables DEPLOY_ENABLED   (optional) VM_DIR, default ~/smaran
+#
+# Never runs for a pull request or for a branch other than master. A deploy of an older commit is a
+# manual run of this workflow with the sha input.
+name: cd
+
+on:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+    branches: [master]
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: Commit to build and deploy (a re-deploy of something that passed ci)
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+jobs:
+  build-and-push:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+      sha: ${{ steps.meta.outputs.sha }}
+    steps:
+      - id: meta
+        env:
+          SHA: ${{ github.event.inputs.sha || github.event.workflow_run.head_sha }}
+        run: |
+          sha="$SHA"
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { echo "not a full commit sha: $sha" >&2; exit 1; }
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "tag=sha-${sha:0:7}" >> "$GITHUB_OUTPUT"
+          echo "owner=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.meta.outputs.sha }}
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          push: true
+          sbom: true          # a software bill of materials, attached to the image in GHCR
+          provenance: true    # and where and how it was built
+          tags: |
+            ghcr.io/${{ steps.meta.outputs.owner }}/smaran-backend:${{ steps.meta.outputs.tag }}
+            ghcr.io/${{ steps.meta.outputs.owner }}/smaran-backend:latest
+          labels: org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }},org.opencontainers.image.revision=${{ steps.meta.outputs.sha }}
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,scope=backend,mode=max
+      - name: Frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: frontend
+          push: true
+          sbom: true          # a software bill of materials, attached to the image in GHCR
+          provenance: true    # and where and how it was built
+          tags: |
+            ghcr.io/${{ steps.meta.outputs.owner }}/smaran-frontend:${{ steps.meta.outputs.tag }}
+            ghcr.io/${{ steps.meta.outputs.owner }}/smaran-frontend:latest
+          labels: org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }},org.opencontainers.image.revision=${{ steps.meta.outputs.sha }}
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,scope=frontend,mode=max
+
+  deploy:
+    needs: build-and-push
+    if: vars.DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.build-and-push.outputs.sha }}
+      - name: SSH access
+        env:
+          VM_SSH_KEY: ${{ secrets.VM_SSH_KEY }}
+          VM_HOST: ${{ secrets.VM_HOST }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$VM_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          # The host key is taken on first contact (trust on first use). To pin it, put the VM's key in
+          # a VM_HOST_KEY secret and write that to known_hosts instead: docs/RUNBOOK.md.
+          ssh-keyscan -T 10 -H "$VM_HOST" >> ~/.ssh/known_hosts
+      - name: Copy the deploy files
+        env:
+          VM_DIR: ${{ vars.VM_DIR || '~/smaran' }}
+        run: |
+          target="${{ secrets.VM_USER }}@${{ secrets.VM_HOST }}"
+          ssh -i ~/.ssh/deploy_key "$target" "mkdir -p $VM_DIR"
+          scp -i ~/.ssh/deploy_key deploy/{deploy.sh,smoke.sh,backup.sh,restore.sh,docker-compose.prod.yml,Caddyfile} "$target:$VM_DIR/"
+          ssh -i ~/.ssh/deploy_key "$target" "chmod +x $VM_DIR/*.sh"
+      - name: Deploy (pull, start, health, smoke test, roll back on failure)
+        env:
+          VM_DIR: ${{ vars.VM_DIR || '~/smaran' }}
+          TAG: ${{ needs.build-and-push.outputs.tag }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          target="${{ secrets.VM_USER }}@${{ secrets.VM_HOST }}"
+          # The registry login lasts for this deploy only: the token is read from stdin (never in a
+          # command line or a log) and removed at the end, success or not.
+          printf '%s' "$GHCR_TOKEN" | ssh -i ~/.ssh/deploy_key "$target" \
+            "docker login ghcr.io -u '${{ github.actor }}' --password-stdin >/dev/null"
+          status=0
+          ssh -i ~/.ssh/deploy_key "$target" "cd $VM_DIR && ./deploy.sh $TAG" || status=$?
+          ssh -i ~/.ssh/deploy_key "$target" "docker logout ghcr.io >/dev/null" || true
+          exit $status
+      - name: The public address, from outside
+        run: |
+          curl -fsS --retry 5 --retry-delay 5 --max-time 15 "https://${{ secrets.DOMAIN }}/actuator/health" | grep -q '"status":"UP"'
+          curl -fsS --max-time 15 "https://${{ secrets.DOMAIN }}/" | grep -q 'id="root"'
+      - name: Cleanup
+        if: always()
+        run: rm -f ~/.ssh/deploy_key
+
+  notify:
+    needs: [build-and-push, deploy]
+    if: always() && needs.build-and-push.result != 'skipped'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Summary
+        run: |
+          {
+            echo "## Release \`${{ needs.build-and-push.outputs.tag }}\`"
+            echo "- images: ${{ needs.build-and-push.result }}"
+            echo "- deploy: ${{ needs.deploy.result }}"
+            if [ "${{ needs.deploy.result }}" = skipped ]; then
+              echo
+              echo "The deploy was skipped: DEPLOY_ENABLED is not \"true\". The images are in GHCR."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Open an issue if it failed
+        if: needs.build-and-push.result == 'failure' || needs.deploy.result == 'failure'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue create --repo "$GITHUB_REPOSITORY" \
+            --title "Deploy of ${{ needs.build-and-push.outputs.tag }} failed" \
+            --body "Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID
+
+          images: ${{ needs.build-and-push.result }}, deploy: ${{ needs.deploy.result }}.
+          If the deploy ran, deploy.sh put the previous tag back (see the run log); the VM is on the last good release.
+          Steps: docs/RUNBOOK.md, \"A deploy failed\"."
