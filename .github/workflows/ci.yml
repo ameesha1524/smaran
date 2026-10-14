@@ -142,16 +142,18 @@ jobs:
       # High and critical findings with a fix available fail the build. Findings with no fix yet are
       # listed in the log (the table below) and are decisions, not build failures.
       - name: Scan the backend image
-        uses: aquasecurity/trivy-action@v0.33.1
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
+          version: v0.75.0
           image-ref: ghcr.io/local/smaran-backend:good
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: "1"
           trivyignores: .trivyignore
       - name: Scan the frontend image
-        uses: aquasecurity/trivy-action@v0.33.1
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
+          version: v0.75.0
           image-ref: ghcr.io/local/smaran-frontend:good
           severity: HIGH,CRITICAL
           ignore-unfixed: true
@@ -192,8 +194,9 @@ jobs:
           pip install pip-audit
           pip-audit -r data-science/requirements.txt
       - name: Trivy on the repository (Maven, npm and pip lock files, and secrets)
-        uses: aquasecurity/trivy-action@v0.33.1
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
+          version: v0.75.0
           scan-type: fs
           scanners: vuln,secret
           severity: HIGH,CRITICAL
