@@ -17,7 +17,7 @@ class StartupChecksTest {
     private static StartupChecks checks(String secret, boolean openDemo, String... profiles) {
         MockEnvironment env = new MockEnvironment();
         env.setActiveProfiles(profiles);
-        return new StartupChecks(secret, openDemo, env);
+        return new StartupChecks(secret, openDemo, "a-real-database-password", env);
     }
 
     @Test
@@ -71,5 +71,16 @@ class StartupChecksTest {
         assertNotNull(problem);
         assertFalse(problem.contains("too-short"));
         assertNull(StartupChecks.problem(REAL, false, false));
+    }
+
+    @Test
+    @DisplayName("production needs a real database password too, not one that is in this repository")
+    void databasePassword() {
+        assertNotNull(StartupChecks.problem(REAL, false, false, ""));
+        assertNotNull(StartupChecks.problem(REAL, false, false, null));
+        assertNotNull(StartupChecks.problem(REAL, false, false, "smaran"));
+        assertNotNull(StartupChecks.problem(REAL, false, false, "Password"));
+        assertNull(StartupChecks.problem(REAL, false, false, "kT9-long-random-value"));
+        assertNull(StartupChecks.problem("anything", false, true, ""), "dev and demo may use the default");
     }
 }

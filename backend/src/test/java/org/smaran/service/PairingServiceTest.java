@@ -105,6 +105,7 @@ class PairingServiceTest {
     }
 
     private static PairingService service(String pepper) {
-        return new PairingService(null, null, null, null, null, java.time.Clock.systemUTC(), pepper, 72, 180, 5, 15);
+        return new PairingService(null, null, null, null, null, java.time.Clock.systemUTC(), pepper, 72, 180, 5, 15,
+                new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
     }
 }

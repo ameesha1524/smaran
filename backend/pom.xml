@@ -76,11 +76,15 @@
       <artifactId>spring-boot-starter-validation</artifactId>
     </dependency>
 
-    <!-- /actuator/health, for the container health check and the deploy script.
-         Only `health` is exposed (application.yml). -->
+    <!-- /actuator/health and /actuator/info are public, for the container health check and the
+         deploy script. /actuator/prometheus is for administrators only (SecurityConfig). -->
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-actuator</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.micrometer</groupId>
+      <artifactId>micrometer-registry-prometheus</artifactId>
     </dependency>
 
     <dependency>
@@ -191,6 +195,13 @@
       <plugin>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-maven-plugin</artifactId>
+        <executions>
+          <execution>
+            <goals>
+              <goal>build-info</goal>
+            </goals>
+          </execution>
+        </executions>
         <configuration>
           <excludes>
             <exclude>

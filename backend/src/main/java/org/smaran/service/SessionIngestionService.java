@@ -2,6 +2,7 @@ package org.smaran.service;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import java.time.Clock;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -91,6 +92,7 @@ public class SessionIngestionService {
     private final Rescorer rescorer;
     private final Clock clock;
     private final JdbcTemplate jdbc;
+    private final MeterRegistry meters;
 
     public SessionIngestionService(
             GameSessionRepository sessions,
@@ -106,7 +108,8 @@ public class SessionIngestionService {
             SessionRecords records,
             Rescorer rescorer,
             Clock clock,
-            JdbcTemplate jdbc) {
+            JdbcTemplate jdbc,
+            MeterRegistry meters) {
         this.sessions = sessions;
         this.profileRepo = profileRepo;
         this.snapshots = snapshots;
@@ -121,6 +124,7 @@ public class SessionIngestionService {
         this.rescorer = rescorer;
         this.clock = clock;
         this.jdbc = jdbc;
+        this.meters = meters;
     }
 
     /** One tablet's queue. The garden is recomputed once, from the deduplicated history, at the end. */
@@ -128,7 +132,9 @@ public class SessionIngestionService {
     public BatchResult ingestBatch(String patientId, String deviceId, List<SessionEnvelope> envelopes) {
         List<Outcome> outcomes = new ArrayList<>();
         for (SessionEnvelope e : envelopes == null ? List.<SessionEnvelope>of() : envelopes) {
-            outcomes.add(ingest(patientId, deviceId, e));
+            Outcome outcome = ingest(patientId, deviceId, e);
+            outcomes.add(outcome);
+            meters.counter("sessions_ingested_total", "status", outcome.status().name().toLowerCase()).increment();
         }
         BatchResult result = new BatchResult(outcomes, null);
         GardenState garden = result.count(Status.ACCEPTED) > 0 ? recomputeGarden(patientId) : gardens.forPatient(patientId);

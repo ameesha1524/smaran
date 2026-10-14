@@ -1,5 +1,7 @@
 package org.smaran.service;
 
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.security.SecureRandom;
 import java.time.Clock;
 import java.time.Duration;
@@ -72,6 +74,9 @@ public class PairingService {
     private final int maxFailures;
     private final Duration window;
     private final SecureRandom random = new SecureRandom();
+    private final Counter wrongCode;
+    private final Counter lockedOut;
+    private final Counter redeemed;
 
     public PairingService(
             PairingCodeRepository codes,
@@ -84,7 +89,8 @@ public class PairingService {
             @Value("${smaran.pairing.code-ttl-hours:72}") long codeTtlHours,
             @Value("${smaran.pairing.device-ttl-days:180}") long deviceTtlDays,
             @Value("${smaran.pairing.max-failures:5}") int maxFailures,
-            @Value("${smaran.pairing.failure-window-minutes:15}") long failureWindowMinutes) {
+            @Value("${smaran.pairing.failure-window-minutes:15}") long failureWindowMinutes,
+            MeterRegistry meters) {
         this.codes = codes;
         this.devices = devices;
         this.attempts = attempts;
@@ -96,6 +102,10 @@ public class PairingService {
         this.deviceTtl = Duration.ofDays(deviceTtlDays);
         this.maxFailures = maxFailures;
         this.window = Duration.ofMinutes(failureWindowMinutes);
+        this.wrongCode = Counter.builder("pairing_failures_total").tag("reason", "wrong_code")
+                .description("Pairing codes that did not work, and clients refused for trying too often").register(meters);
+        this.lockedOut = Counter.builder("pairing_failures_total").tag("reason", "locked").register(meters);
+        this.redeemed = Counter.builder("pairing_redeemed_total").description("Tablets paired").register(meters);
     }
 
     public record IssuedCode(String code, Instant expiresAt) {
@@ -155,6 +165,7 @@ public class PairingService {
                 || (fingerprint != null
                         && attempts.countByFingerprintAndSucceededFalseAndAtAfter(fingerprint, since) >= maxFailures);
         if (locked) {
+            lockedOut.increment();
             throw new ResponseStatusException(
                     HttpStatus.TOO_MANY_REQUESTS, "Let’s take a little rest. Please try again in a while.");
         }
@@ -163,6 +174,7 @@ public class PairingService {
         PairingCode row = code == null ? null : codes.findByCodeHash(hash(code)).orElse(null);
         if (row == null || codes.claim(row.getId(), now) != 1) {
             record(now, ipHash, fingerprint, false);
+            wrongCode.increment();
             // Unknown, expired, used, replaced or malformed: one answer for all of
             // them, so a guess learns nothing about which it was.
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "That code didn’t work.");
@@ -181,6 +193,7 @@ public class PairingService {
         codes.attachDevice(row.getId(), device.getId());
 
         record(now, ipHash, fingerprint, true);
+        redeemed.increment();
         audit.record(Actor.DEVICE, device.getId(), "DEVICE_PAIRED", row.getPatientId(), null, null,
                 Map.of("label", device.getLabel()));
         log.info("device {} paired", device.getId());

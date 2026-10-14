@@ -1,5 +1,7 @@
 package org.smaran.service;
 
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
@@ -81,6 +83,8 @@ public class AuthService {
     private final Duration lockout;
     private final Duration refreshTtl;
 
+    private final Counter authFailures;
+
     public AuthService(
             AppUserRepository users,
             RefreshTokenRepository refreshTokens,
@@ -94,7 +98,8 @@ public class AuthService {
             @Value("${smaran.auth.ip-max-failures:20}") int ipMaxFailures,
             @Value("${smaran.auth.ip-window-minutes:15}") long ipWindowMinutes,
             @Value("${smaran.auth.register-max-per-hour:10}") int registerMax,
-            @Value("${smaran.security.refresh-ttl-days:7}") long refreshDays) {
+            @Value("${smaran.security.refresh-ttl-days:7}") long refreshDays,
+            MeterRegistry meters) {
         this.users = users;
         this.refreshTokens = refreshTokens;
         this.patients = patients;
@@ -108,6 +113,9 @@ public class AuthService {
         this.loginLimiter = new AttemptLimiter(ipMaxFailures, Duration.ofMinutes(ipWindowMinutes), clock);
         this.registerLimiter = new AttemptLimiter(registerMax, Duration.ofHours(1), clock);
         this.decoyHash = encoder.encode("decoy-" + UUID.randomUUID());
+        this.authFailures = Counter.builder("auth_failures_total")
+                .description("Failed sign-ins: wrong password, unknown account, locked, disabled")
+                .register(meters);
     }
 
     /* ------------------------------------------------------------ register */
@@ -304,7 +312,8 @@ public class AuthService {
         }
     }
 
-    private static ResponseStatusException failed() {
+    private ResponseStatusException failed() {
+        authFailures.increment();
         return new ResponseStatusException(HttpStatus.UNAUTHORIZED, MESSAGE_FAILED);
     }
 
