@@ -84,7 +84,7 @@ jobs:
           java-version: 21
           cache: maven
       - name: Maven dependencies (Trivy reads the pom's resolved tree)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.33.1
         with:
           scan-type: fs
           scan-ref: backend
@@ -104,7 +104,7 @@ jobs:
           docker build -t smaran-backend:scan backend
           docker build -t smaran-frontend:scan frontend
       - name: Trivy, backend image
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.33.1
         with:
           image-ref: smaran-backend:scan
           severity: HIGH,CRITICAL
@@ -112,7 +112,7 @@ jobs:
           exit-code: "1"
           trivyignores: .trivyignore
       - name: Trivy, frontend image
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.33.1
         with:
           image-ref: smaran-frontend:scan
           severity: HIGH,CRITICAL
