@@ -4,7 +4,8 @@
 #   → PWA            http://localhost:8081
 #   → API            http://localhost:8080
 #
-# PostgreSQL, Redis, the Spring Boot backend, and the PWA behind nginx.
+# PostgreSQL, the Spring Boot backend, and the PWA behind nginx (which forwards /api to the backend, so the
+# browser sees one origin). The production stack, with HTTPS and backups, is deploy/docker-compose.prod.yml.
 #
 # For day-to-day development start only the database and run the backend and
 # the frontend from source:
@@ -37,12 +38,6 @@ services:
       timeout: 5s
       retries: 10
 
-  redis:
-    image: redis:7-alpine
-    command: ["redis-server", "--save", "60", "1", "--loglevel", "warning"]
-    volumes:
-      - redis-data:/data
-
   backend:
     build: ./backend
     depends_on:
@@ -53,12 +48,12 @@ services:
       SMARAN_DB_URL: jdbc:postgresql://db:5432/smaran
       SMARAN_DB_USER: smaran
       SMARAN_DB_PASSWORD: ${SMARAN_DB_PASSWORD:-smaran}
-      SMARAN_REDIS_HOST: redis
       # 32 bytes minimum. Generate with: openssl rand -base64 48
       # The fallback is the built-in demo value, which the backend accepts in
       # the demo profile and refuses to start with in prod.
       SMARAN_JWT_SECRET: ${SMARAN_JWT_SECRET:-demo-only-secret-demo-only-secret-demo-32}
       SMARAN_CORS: http://localhost:8081
+      SERVER_FORWARD_HEADERS_STRATEGY: native
       SMARAN_STORAGE: /app/storage
       # Notifications degrade to log lines until these are filled in.
       SMARAN_FCM_KEY: ${SMARAN_FCM_KEY:-}
@@ -67,7 +62,7 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       SMARAN_TWILIO_TOKEN: ${SMARAN_TWILIO_TOKEN:-}
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     volumes:
       # Family photographs and voice notes. Back this up — it is irreplaceable
       # in a way the database is not.
@@ -78,9 +73,8 @@ services:
     depends_on:
       - backend
     ports:
-      - "8081:80"
+      - "8081:8080"
 
 volumes:
   db-data:
-  redis-data:
   media:

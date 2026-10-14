@@ -1,0 +1,136 @@
+# Smaran in production: one machine, one domain, automatic HTTPS.
+#
+#   deploy/deploy.sh <image-tag>        (what CD runs; see docs/RUNBOOK.md)
+#
+# Images come from GHCR by tag. Everything secret comes from the .env beside this file (root-only on the
+# machine, never in git, never in an image): see .env.example for every name. Only Caddy publishes ports;
+# the database is on a private network with no published port.
+name: ${COMPOSE_PROJECT_NAME:-smaran}
+
+x-restart: &restart
+  restart: unless-stopped
+
+services:
+  db:
+    <<: *restart
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: smaran
+      POSTGRES_USER: smaran
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is not set in .env}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    networks: [data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U smaran -d smaran"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    mem_limit: 512m
+    cpus: 1.0
+
+  backend:
+    <<: *restart
+    image: ghcr.io/${GHCR_OWNER:?GHCR_OWNER is not set}/smaran-backend:${IMAGE_TAG:?IMAGE_TAG is not set}
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      SMARAN_DB_URL: jdbc:postgresql://db:5432/smaran
+      SMARAN_DB_USER: smaran
+      SMARAN_DB_PASSWORD: ${POSTGRES_PASSWORD}
+      SMARAN_JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is not set in .env}
+      SMARAN_EXPORT_SALT: ${EXPORT_SALT:-}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      SMARAN_JOURNAL_MODEL: ${JOURNAL_MODEL:-claude-haiku-4-5-20251001}
+      # Where a browser may call the API from, if not through the proxy: by default only the public address.
+      SMARAN_CORS: ${CORS_ORIGINS:-https://${DOMAIN:?DOMAIN is not set}}
+      SMARAN_STORAGE: /app/storage
+      SMARAN_FCM_KEY: ${FCM_KEY:-}
+      SMARAN_TWILIO_SID: ${TWILIO_SID:-}
+      SMARAN_TWILIO_TOKEN: ${TWILIO_TOKEN:-}
+      # The client's address is the one Caddy and nginx saw, so the sign-in and pairing limits count real clients.
+      SERVER_FORWARD_HEADERS_STRATEGY: native
+    volumes:
+      # Family photographs and voice notes: irreplaceable, and backed up by deploy/backup.sh.
+      - media:/app/storage
+    # data: the database. edge: the PWA container reaches it here, and it reaches out (the journal model, notifications).
+    networks: [data, edge]
+    mem_limit: 768m
+    cpus: 1.5
+
+  frontend:
+    <<: *restart
+    image: ghcr.io/${GHCR_OWNER}/smaran-frontend:${IMAGE_TAG}
+    depends_on:
+      backend:
+        condition: service_healthy
+        restart: true
+    environment:
+      BACKEND_URL: http://backend:8080
+    networks: [edge]
+    mem_limit: 128m
+    cpus: 0.5
+
+  caddy:
+    <<: *restart
+    image: caddy:2-alpine
+    depends_on:
+      frontend:
+        condition: service_healthy
+        # A new release replaces the PWA container; Caddy is restarted with it, so it never holds on to the old one.
+        restart: true
+    environment:
+      DOMAIN: ${DOMAIN}
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+      - "${HTTPS_PORT:-443}:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks: [edge]
+    mem_limit: 128m
+    cpus: 0.5
+
+  # A dump of the database every night, and the media volume with it. See docs/RUNBOOK.md for how to restore.
+  backup:
+    <<: *restart
+    image: postgres:16-alpine
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGHOST: db
+      PGUSER: smaran
+      PGDATABASE: smaran
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      BACKUP_HOUR: ${BACKUP_HOUR:-02}
+      KEEP_DAILY: ${BACKUP_KEEP_DAILY:-14}
+      KEEP_WEEKLY: ${BACKUP_KEEP_WEEKLY:-8}
+    entrypoint: ["sh", "/backup/backup.sh", "loop"]
+    volumes:
+      - ./backup.sh:/backup/backup.sh:ro
+      - backups:/backups
+      - media:/media:ro
+    networks: [data]
+    mem_limit: 128m
+    cpus: 0.5
+
+networks:
+  # The database and the things that talk to it. Internal: no route in from outside and none out.
+  data:
+    internal: true
+  # Caddy, the PWA container and the backend. Only Caddy publishes ports.
+  edge:
+
+volumes:
+  db-data:
+  media:
+  backups:
+  caddy-data:
+  caddy-config:

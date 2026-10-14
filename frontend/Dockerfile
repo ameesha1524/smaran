@@ -1,22 +1,26 @@
 # Build the PWA and serve it from nginx.
 #
 # The Service Worker is what makes Smaran work in a village with no signal, so
-# the nginx config below is careful about two things: the worker itself must
-# never be cached (or a device can be stuck on an old one forever), and every
-# route must fall through to index.html so a deep link opens the app rather
-# than a 404.
+# nginx.conf is careful about it: the worker itself is never cached, and every
+# route falls through to index.html so a deep link opens the app. nginx also
+# forwards /api to the backend, so the browser sees one origin and CORS never
+# comes into it. The image runs as an unprivileged user on port 8080.
 
 FROM node:22-alpine AS build
 WORKDIR /build
 
-COPY package.json package-lock.json* ./
-RUN npm ci --no-audit --no-fund || npm install --no-audit --no-fund
+COPY package.json package-lock.json ./
+RUN npm ci --no-audit --no-fund
 
 COPY . .
 RUN npm run build
 
-FROM nginx:1.27-alpine
+FROM nginxinc/nginx-unprivileged:1.27-alpine
 COPY --from=build /build/dist /usr/share/nginx/html
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY nginx/security-headers.conf /etc/nginx/snippets/security-headers.conf
+COPY nginx/default.conf.template /etc/nginx/templates/default.conf.template
+ENV BACKEND_URL=http://backend:8080 DNS_RESOLVER=127.0.0.11
 
-EXPOSE 80
+EXPOSE 8080
+HEALTHCHECK --interval=15s --timeout=3s --start-period=10s --retries=3 \
+  CMD wget -qO- http://127.0.0.1:8080/healthz | grep -q ok || exit 1
