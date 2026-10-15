@@ -85,6 +85,8 @@ public class SecurityConfig {
                         auth.requestMatchers("/api/report/**").hasAnyRole("DOCTOR", "CAREGIVER", "ADMIN");
                         auth.requestMatchers("/api/caregiver/**").hasAnyRole("CAREGIVER", "DOCTOR", "ADMIN");
                         auth.requestMatchers("/api/admin/**", "/actuator/**").hasRole("ADMIN");
+                        // The description of the whole API: for an administrator, and off in prod altogether.
+                        auth.requestMatchers("/v3/api-docs", "/v3/api-docs/**", "/v3/api-docs.yaml").hasRole("ADMIN");
                         auth.requestMatchers("/api/doctor/**").hasRole("DOCTOR");
                         // The tablet's own surface. Nothing else accepts a device token
                         // (AccessGuard refuses it), and nothing here accepts a person's.

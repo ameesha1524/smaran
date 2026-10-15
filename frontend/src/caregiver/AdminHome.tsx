@@ -89,7 +89,7 @@ export default function AdminHome() {
                     disabled={busy}
                     onClick={() => void act(() => admin.approve(u.id))}
                     className="pill"
-                    style={{ background: 'var(--olive-continue)', color: 'var(--chalk)', padding: '6px 18px', fontSize: 15 }}
+                    style={{ background: 'var(--olive-action)', color: 'var(--chalk)', padding: '6px 18px', fontSize: 15 }}
                   >
                     Approve
                   </button>

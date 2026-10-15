@@ -84,7 +84,7 @@ export default function DoctorHome() {
                 <Link
                   to={`/doctor/patient/${p.patientId}`}
                   className="pill"
-                  style={{ background: 'var(--olive-continue)', color: 'var(--chalk)', padding: '8px 22px', fontSize: 16 }}
+                  style={{ background: 'var(--olive-action)', color: 'var(--chalk)', padding: '8px 22px', fontSize: 16 }}
                 >
                   Open
                 </Link>

@@ -162,7 +162,7 @@ export default function PairingPanel({ patientId }: { patientId: string }) {
         onClick={newCode}
         disabled={busy}
         className="pill"
-        style={{ background: 'var(--olive-continue)', color: 'var(--chalk)', padding: '10px 22px', fontSize: 16, opacity: busy ? 0.6 : 1 }}
+        style={{ background: 'var(--olive-action)', color: 'var(--chalk)', padding: '10px 22px', fontSize: 16, opacity: busy ? 0.6 : 1 }}
       >
         {code ? 'Get a new code' : 'Get a pairing code'}
       </button>

@@ -41,6 +41,7 @@ import org.smaran.scoring.LegacyScores;
 import org.smaran.service.CognitiveMap;
 import org.smaran.service.SessionIngestionService;
 import org.springframework.boot.CommandLineRunner;
+import org.springframework.core.annotation.Order;
 import org.springframework.context.annotation.Profile;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
@@ -61,6 +62,7 @@ import org.springframework.stereotype.Component;
  * All names, objects and memories here are fictional placeholders for content a
  * real caregiver uploads during setup.
  */
+@Order(1)
 @Component
 @Profile({"dev", "demo"})
 @Slf4j
