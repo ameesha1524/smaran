@@ -3,7 +3,7 @@
 Read this at the start of every session, after `docs/MASTER_PROMPT.md`.
 All patient data in this repository is synthetic or demo data.
 
-Last updated: 2026-10-09 (end of Phase 5).
+Last updated: 2026-10-15 (Phase 6, PR #8 open; CI being worked through).
 
 ## Phase status
 
@@ -15,17 +15,17 @@ Last updated: 2026-10-09 (end of Phase 5).
 | 3. Device pairing | **P0 and P1 done** | `phase-3-pairing` | PR #5 merged into `master` |
 | 4. Games to dashboards | **P0 done; P1 items 8, 11, 12, 13 done; 9 and 10 (upload) not** | `phase-4-games` | PR #6 merged into `master` |
 | 5. Data science | **P0 and P1 done; P2: clustering done, sentiment correlation not** | `phase-5-data-science` | Verified; see "Phase 5" below |
-| 6. DevOps | Not started | | |
+| 6. DevOps | **P0 written and rehearsed locally. P1: Dependabot, SBOM (written, unrun) and branch-protection advice done; the Grafana profile and preview environments not.** Nothing has run on GitHub or on a real VM yet | `phase-6-devops` | See "Phase 6" below |
 | 7. Hardening and showcase | Not started | | |
 
-**Next:** Phase 6 (DevOps).
+**Next:** merge Phase 6 and read its first CI run; then Phase 7 (hardening and showcase).
 
 ## Needs the human
 
 | # | What | Why | Until then |
 |---|---|---|---|
 | H1 | ~~Install Docker Desktop~~ | Done 2026-10-06 | none |
-| H2 | **Merge the Phase 5 PR** | Merging to `master` is the owner's call | Phase 6 builds on it |
+| H2 | **Merge the Phase 6 PR**, after reading its CI run | Merging to `master` is the owner's call. Several CI jobs (Trivy, gitleaks, Playwright on a runner, CodeQL) had never run when the PR was opened | Phase 7 builds on it |
 | H9 | **Decide what the family is told, and how often.** As shipped, the default alert (a "watch" or worse, two sessions in a row) fires about 22 times per stable patient-year across six domains; a "decline"-only alert, about 4 | The evaluation (`data-science/results/SUMMARY.md`) measured it on a simulated cohort. Options: show the family only "decline"; require three in a row; cap alerts per patient per month. Each trades detection for quiet | Nothing was changed. The shipped behaviour stands |
 | H10 | **Decide the sundowning guard.** At six sittings per part and an effect size of 0.8, 58% of simulated patients with no late-day dip are flagged at least once in a year | At ten sittings and 1.2 it is 8.5%, and 65% of evaluations for a patient who does have a dip | Nothing was changed |
 | H11 | **Consent for research use.** The notice in this build does not mention research or export | The dataset export is for the operator's own evaluation. Before real data is exported for any study, the notice and an ethics approval must cover it | The export works on synthetic data only in practice |
@@ -35,7 +35,10 @@ Last updated: 2026-10-09 (end of Phase 5).
 | H7 | Choose real `ADMIN_EMAIL` and `ADMIN_PASSWORD` for any deployment | The first administrator is created from these on first start; nothing in source can create one | Dev and demo use seeded demo accounts (see below); local runs set nothing |
 | H3 | Install `make` (optional) | `make` is not on PATH | Run the commands under each Makefile target by hand |
 | H4 | Review the commit `f388fe8` | It is 37 files of earlier work that nobody has read as a diff | It is the base for Phase 1 |
-| H5 | Everything in Appendix E of the master prompt (VM, domain, secrets, branch protection) | Needed for deployment in Phase 6 | Not blocking before Phase 6 |
+| H5 | **Everything in Appendix E, and `docs/RUNBOOK.md` "The machine, one time"**: a VM with Docker, a domain pointing at it, the VM's `.env`, the GitHub secrets `VM_HOST` `VM_USER` `VM_SSH_KEY` `DOMAIN`, the `production` environment, the variable `DEPLOY_ENABLED=true`, GHCR package visibility, branch protection on `master` | Until these exist, merging builds and pushes images and **does not deploy**. "Pushing to master deploys" and "https://domain serves the app" cannot be shown without a VM and a domain | The deploy job is skipped (by design, not red) |
+| H13 | **Copy the backups off the VM** (runbook, "Backups and restore") | They are written to a volume on the same machine: that survives a bad deploy and a deleted row, not the loss of the VM | Nothing is lost until the machine is |
+| H15 | **Accept or remove three Spring Framework CVEs** (CVE-2026-47890, -47892, -47884) | Spring Framework 6.2.19 is the last open-source 6.2 release; the fixes are only in Spring Framework 7, which is Spring Boot 4, a major migration (Hibernate, Spring Security, Jackson). Each CVE needs a feature this app does not use (view fragments, WebFlux functional endpoints, XsltView), checked in the code and recorded in `.trivyignore` with an expiry of 2027-01-15, when the scan fails again | They are ignored by the scan; the reasons are in `.trivyignore`. Decide whether to schedule the Boot 4 move before then |
+| H14 | **Do one deliberately broken deploy on the real VM** | It is the Phase 6 done-when. It was shown on one machine with the real scripts (`deploy/rehearse.sh`), not over SSH to a VM | The rehearsal is the evidence we have |
 
 ## Decisions made
 
@@ -600,6 +603,86 @@ All of this is conditional on the simulation's assumptions; `data-science/README
 - UMAP (PCA only).
 - The simulator does not model sub-signals or raw trials, or people who decline playing less.
 
+## Phase 6 — 2026-10-14
+
+Branch `phase-6-devops`, from `master` after PR #7.
+
+### What was built
+
+**Images** (`backend/Dockerfile`, `frontend/Dockerfile`, with `.dockerignore`s): multi-stage; the backend on a slim Java 21 JRE and the PWA on `nginx-unprivileged`; both run as a non-root user and have a health check. nginx serves the app with the Service Worker never cached, falls unknown paths back to `index.html`, forwards `/api` (server-sent events unbuffered) and only `/actuator/health` and `/actuator/info`, and sets the security headers (CSP, no-sniff, frame and referrer policy; HSTS at Caddy). Nothing secret is in an image.
+
+**Compose.** `docker-compose.yml` (development: database, backend in the demo profile, PWA on :8081). `deploy/docker-compose.prod.yml`: images from GHCR by tag, Caddy with automatic HTTPS in front, Postgres on an internal network with no published port, volumes for data, media, backups and Caddy's certificates, health checks and `depends_on` conditions, `restart: unless-stopped`, memory and CPU limits.
+
+**Configuration.** `.env.example` rewritten and complete (two sets of names: development reads `SMARAN_*`; production's `.env` is mapped to them by the compose file). The backend refuses to start in production with a missing, short or example JWT secret **or database password** (`StartupChecks`, the database check is new, tested). The compose file refuses to start without `DOMAIN`, `GHCR_OWNER`, `POSTGRES_PASSWORD`, `JWT_SECRET`.
+
+**Observability.** `/actuator/health` and `/info` public; `/actuator/prometheus` and the rest ADMIN only (a row in the authorization matrix; nginx does not forward them either). JSON logs with a request id (`RequestIdFilter`, `JsonLogLayout`), echoed as `X-Request-Id`; Caddy replaces a caller's own id. Counters: `sessions_ingested_total{status}` (accepted, duplicate, rejected), `auth_failures_total`, `pairing_failures_total{reason}`, `pairing_redeemed_total`, `scoring_rescored_total` and `scoring_mismatch_total` (the last two are Phase 5's). Forwarded headers are on, so the sign-in and pairing limits see the real client.
+
+**Deploy** (`deploy/`): `deploy.sh <tag>` (lock; backup; pull; `up --wait`; wait for health and the page; `smoke.sh`; record the tag; on any failure put the previous tag back; idempotent), `smoke.sh` (sign in as a CI-provisioned smoke account, pair a tablet, send a session, read it from the dashboard, remove the tablet), `backup.sh` (nightly `pg_dump -Fc` checked with `pg_restore --list`, media tarball, atomic rename, 14 daily and 8 weekly), `restore.sh`, `rehearse.sh`.
+
+**Workflows.** `ci.yml`: frontend, backend (Testcontainers: the authorization matrix and pairing tests), data-science, `docker-build` (both images, Trivy, then `deploy/rehearse.sh`), `security` (gitleaks, npm and pip audit, Trivy filesystem), `e2e` (compose stack, smoke test, Playwright); dependencies cached; a high finding with a fix fails the build. `cd.yml`: after `ci` is green on `master`, build and push to GHCR (`sha-<7>` and `latest`, with SBOM and provenance), then a deploy job in the protected `production` environment (copy `deploy/`, run `deploy.sh` over SSH, check the public address from outside), then a notify job (summary, an issue on failure); gated by the variable `DEPLOY_ENABLED`. `security.yml`: CodeQL (Java, TypeScript, Python), every audit, Trivy on the images, gitleaks; on pull requests, on `master` and weekly. `.github/dependabot.yml`: weekly and grouped, for Maven, both npm projects, pip, Docker and Actions.
+
+**Browser tests** (`e2e/playwright/`): headers, CSP, Service Worker caching, what `/actuator` exposes, 401 for an unknown caller; then a family registers, adds a patient, mints a pairing code, a tablet pairs and reaches the pond, the family removes the tablet, and the tablet's next call is 401.
+
+**Docs:** `docs/RUNBOOK.md` (the machine, deploy, a failed deploy, rollback, migrations, rotating each secret, backups and restore, looking at it, add a doctor, add a game, what was rehearsed), `docs/ARCHITECTURE.md` (Mermaid), `docs/explainers/phase-6.md`. The Makefile's `e2e` and a new `rehearse` target are real.
+
+### Commands and results
+
+```
+frontend:  tsc -b and tsc -p tsconfig.test.json → clean;  npm test → 145 passed (8 files)
+           npm audit --omit=dev --audit-level=high → exit 0 (2 moderate advisories remain in shipped packages)
+backend:   mvn -o verify -Dsmaran.build.dir=C:/Users/amees/smaran-build → BUILD SUCCESS
+           unit 108, 0 failures;  integration (PostgreSQL 16 in Testcontainers) 429, 0 failures
+           (after the Spring Boot 3.3.4 to 3.5.16 upgrade below; 107 and 429 before it)
+           new this phase: ObservabilityTest, ObservabilityIT (3), a matrix row for /actuator/prometheus,
+                           StartupChecksTest (database password), PairingServiceTest (counters)
+deploy/rehearse.sh (the real scripts, the production compose file, Caddy with a local certificate, a new database per run):
+   1. the good release deploys, smoke test steps 1-8 pass                                held
+   2. the same tag again: "already deployed and healthy; nothing to do"                  held
+   3. a backend that never starts → "could not bring up", rolled back, good healthy       held
+   4. healthy but the API broken (nginx answers 503) → "smoke FAILED at step 1", rolled back   held
+   5. backup, create a table, restore → table gone, patient count equal, healthy          held
+   exit 0.  Stage 1 took 61 s.
+Playwright against the production-shaped stack on https://localhost:8443 → 2 passed (run by hand)
+ci.yml, cd.yml, security.yml and dependabot.yml parse as YAML. (That check found an unquoted colon in a step
+   name in ci.yml that GitHub would have rejected; fixed.)
+```
+
+**The rehearsal can fail.** The broken-API release is the proof: with the health check green, the smoke test refused it. A release whose backend sleeps instead of starting is refused by `up --wait`. Earlier in the phase a first rehearsal run reported `could not bring good up` at stage 1; the next run (after Docker had been restarted) passed with stage 1 at 61 s against a 90 s limit, so the limit is now 180 s. I did not find another cause and could not reproduce it.
+
+### Defects found and fixed in this phase
+
+- **Logs carried personal data.** `NotificationService` wrote family members' names and relationships, the caregiver's email or phone, device push tokens and the text of reminders to the log (every time, since sending is a stub). Now ids only. Found by reading every log statement; no test guards it.
+- `ci.yml` had an unquoted `: ` in a step name (above).
+- Compose project names collided with the development volume (a database password failure); the project name is now explicit.
+- Duplicate security headers from both proxies (`proxy_hide_header`); "Invalid CORS request" through a proxy on a non-standard port (`Host $http_host`, `CORS_ORIGINS`).
+- Frontend: 14 npm advisories reduced by `npm audit fix` (lock file only); `pillow` pinned to 12.3.0.
+- The Spring Boot `repackage` goal was declared twice; removed.
+- **Found by the first CI run on GitHub:**
+  - `trivy-action@0.28.0` does not exist (tags carry a `v`), and the Trivy release it installs was withdrawn: now `trivy-action@v0.36.0` with Trivy `v0.75.0` pinned.
+  - **The backend image had 68 HIGH or CRITICAL findings with fixes** (Tomcat authentication bypass and RCE, Spring Security, Netty, Jackson, the PostgreSQL driver) because Spring Boot 3.3.4 is old. Now **Spring Boot 3.5.16**, with Tomcat 10.1.61, Netty 4.1.139, Jackson 2.21.7 and PostgreSQL 42.7.14 overridden in `pom.xml` (Boot's own are still behind the fixes). 4 CRITICAL findings are left, 3 distinct CVEs, in Spring Framework 6.2.19, fixed only in Spring Framework 7 (Boot 4): see H15.
+  - The frontend image had 40 findings in OS packages (OpenSSL, libexpat, libpng, libxml2 ...) from the old `nginx-unprivileged:1.27-alpine`: now `1.30-alpine` with `apk upgrade`.
+  - Trivy's filesystem scan resolved the pom from Maven Central and was answered 429 from the shared runner address: the repository scan no longer includes `backend/` (the image scan checks the built jar exactly).
+  - **CodeQL, two real alerts:** a regex in the Playwright test whose `\.` was lost in a template literal (so it matched any character); and the request filter logging the raw request path (now stripped of control characters and capped at 200, with a test).
+  - **A bug in `deploy.sh`'s rollback**, found when the rehearsal was re-run on the Spring Boot 3.5 backend, which starts slower (50 s to 4 minutes on this machine): `up --wait` stopped at the slow backend and left the proxy not started, so the site stayed down after the backend recovered. The rollback now keeps starting what is left until the public address is healthy (`settle`), the backend health check allows about 240 s, and the deploy timeout is 300 s. The rehearsal passes with this (all five stages, exit 0).
+  - Spring printed a generated default password to the log at start-up. A `UserDetailsService` that knows nobody replaces it.
+
+### Done-when, checked
+
+| Criterion | Result |
+|---|---|
+| Pushing to main deploys | **Not shown.** `cd.yml` is written and parses; it has never run. It needs H5. Until `DEPLOY_ENABLED` is true it builds and pushes images and skips the deploy |
+| `https://<domain>` serves the app | **Not shown for a real domain.** Shown on `https://localhost` (Caddy's own certificate) through the real compose file |
+| The smoke test passes in CI | **Not yet.** It passes locally against the dev stack, the production-shaped stack and in the rehearsal. The `e2e` job is its first run on a runner |
+| A deliberately broken deploy rolls back | **Yes, on one machine with the real scripts** (`rehearse.sh`: two kinds of break; it runs in CI on every change). Not over SSH to a VM (H14) |
+
+### Not done in Phase 6
+
+- The Prometheus and Grafana compose profile, and preview environments (P1).
+- An alert rule for a burst of pairing failures from many addresses (issue 30). The counters it needs exist; nothing watches them.
+- The media half of `restore.sh` was not run: the one test command was refused by the tool's removal safety check, and I did not work around that. Its code lays files over what is there and deletes nothing. The database half is exercised in `rehearse.sh`.
+- Trivy was not run locally (the container run failed on this machine); its scans run in CI. Three Spring Framework CVEs are accepted in `.trivyignore` with reasons and an expiry (H15).
+- Self-hosting the fonts and the MediaPipe model (issue 70).
+
 ## Known issues
 
 Found during recon. Each is scheduled in `docs/PLAN.md`.
@@ -690,6 +773,21 @@ Found during recon. Each is scheduled in `docs/PLAN.md`.
 62. **The CI step that diffs the committed fixture against a fresh one assumes NumPy gives the same stream on Linux and Windows.** Verified: every file but one came out byte-identical on Linux and Windows. (Found by the first CI run: a gzip file's bytes differ between platforms and carry a timestamp, so the fixture's curves are plain CSV now; every file is written with LF endings. Everything else the simulator wrote was byte-identical between Windows and Linux, which is the answer to the NumPy question.)
 63. **Results are the same up to floating-point noise in the last digits, and the figures are not byte-identical between machines.**
 64. **`make` is not installed on this machine** (H3), so `make ds` was never run as such; its two lines were.
+
+## Found in Phase 6
+
+65. **A rollback puts back the code, not the database.** Migrations must be backward compatible (add before you remove); the pre-deploy backup is the way back from one that is not. Runbook, "Migrations".
+66. **The media half of a restore has not been run.** See above.
+67. **No workflow has run on GitHub, and nothing has run on a real VM or domain.** Not shown: Let's Encrypt issuance, the SSH steps, the GHCR login and pull, CodeQL, gitleaks, Trivy, Playwright on a runner, the GHCR push with SBOM. The rehearsal used a local certificate and `https://localhost:8443`.
+68. **The VM's SSH host key is trusted on first use** by `cd.yml` (`ssh-keyscan`). The runbook says how to pin it.
+69. **Backups are on the VM they protect** (H13).
+70. **The tablet loads Google Fonts and the MediaPipe code and model from public CDNs on first use**, so a first run needs internet, and the CSP allows those hosts. After that the Service Worker has them. Self-hosting them is a Phase 7 candidate.
+71. **npm advisories:** 2 moderate in packages that ship (the audit gate is at high), more in development tooling (reported weekly, not failing).
+72. **Limiters are still in memory and per node** (issue 23). Behind the proxies they now see the real client address (issue 31: configured; that one client's lock-out does not affect another's was not tested through the proxy).
+73. **Streams through the proxies** (issue 46): nginx has buffering off for `/api` and Caddy flushes immediately; no test holds a live dashboard stream open through them.
+74. **The smoke account and patient stay in the production database** (named so, one synthetic session per deploy). They appear in an administrator's user list and the audit log.
+75. **Reminder pushes and caregiver SMS are still stubs** (`TODO(pilot)` in `NotificationService`); they now log only ids.
+76. **The proxies limit only the request body size** (25 MB); the per-endpoint limits are the application's.
 
 ## Files left untracked on purpose
 

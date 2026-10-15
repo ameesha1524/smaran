@@ -1,0 +1,114 @@
+# nginx for the Smaran PWA. The container's entrypoint fills ${BACKEND_URL} and ${DNS_RESOLVER} from
+# the environment (defaults in the Dockerfile) when it starts; nothing else here is substituted.
+#
+# Three jobs:
+#  1. Serve the built app, with the Service Worker never cached and unknown paths falling through
+#     to index.html so a deep link opens the app.
+#  2. Forward /api to the backend, so the browser sees one origin and CORS never comes into it. The
+#     live-dashboard stream is server-sent events: no buffering, a long read timeout.
+#  3. Forward only /actuator/health and /actuator/info. Metrics and everything else under /actuator
+#     are never reachable from outside.
+
+map $http_x_request_id $smaran_request_id {
+    default $http_x_request_id;
+    ""      $request_id;
+}
+
+# Behind Caddy (or any proxy on a private network) the client is the last address in X-Forwarded-For.
+set_real_ip_from 10.0.0.0/8;
+set_real_ip_from 172.16.0.0/12;
+set_real_ip_from 192.168.0.0/16;
+real_ip_header X-Forwarded-For;
+real_ip_recursive on;
+
+server {
+    listen 8080;
+    server_name _;
+    root /usr/share/nginx/html;
+    index index.html;
+
+    server_tokens off;
+    client_max_body_size 25m;   # a photograph and five seconds of audio (the API allows 24 MB)
+
+    resolver ${DNS_RESOLVER} valid=10s ipv6=off;
+    set $backend ${BACKEND_URL};
+
+    location = /healthz {
+        access_log off;
+        default_type text/plain;
+        return 200 "ok\n";
+    }
+
+    # Hashed build assets never change under the same name.
+    location /assets/ {
+        include /etc/nginx/snippets/security-headers.conf;
+        add_header Cache-Control "public, immutable" always;
+        expires 1y;
+    }
+
+    # The Service Worker must always be revalidated. A device stuck on an old worker is a device
+    # that stops receiving medicine reminders correctly.
+    location = /service-worker.js {
+        include /etc/nginx/snippets/security-headers.conf;
+        add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+        expires -1;
+    }
+
+    location = /manifest.webmanifest {
+        include /etc/nginx/snippets/security-headers.conf;
+        add_header Cache-Control "no-cache" always;
+        types { application/manifest+json webmanifest; }
+    }
+
+    # The shell is revalidated, so a new release reaches a tablet the next time it is online.
+    location = /index.html {
+        include /etc/nginx/snippets/security-headers.conf;
+        add_header Cache-Control "no-cache" always;
+    }
+
+    location /api/ {
+        include /etc/nginx/snippets/security-headers.conf;
+        proxy_pass $backend;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        # With the port, so the backend can tell its own address from another site's (CORS compares them).
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $http_x_forwarded_proto;
+        proxy_set_header X-Request-Id $smaran_request_id;
+        # The backend sets these too; one copy of each, ours.
+        proxy_hide_header X-Content-Type-Options;
+        proxy_hide_header X-Frame-Options;
+        proxy_hide_header Cache-Control;
+        proxy_hide_header Pragma;
+        proxy_hide_header Expires;
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_read_timeout 1h;
+        proxy_send_timeout 1h;
+        # An API answer is never kept by a shared cache.
+        add_header Cache-Control "no-store" always;
+    }
+
+    location ~ ^/actuator/(health|info)$ {
+        include /etc/nginx/snippets/security-headers.conf;
+        proxy_pass $backend;
+        proxy_set_header X-Request-Id $smaran_request_id;
+        add_header Cache-Control "no-store" always;
+    }
+
+    location /actuator/ {
+        return 404;
+    }
+
+    # Every other path is the app.
+    location / {
+        include /etc/nginx/snippets/security-headers.conf;
+        try_files $uri $uri/ /index.html;
+    }
+
+    gzip on;
+    gzip_types text/css application/javascript application/json image/svg+xml application/manifest+json;
+    gzip_min_length 1024;
+}

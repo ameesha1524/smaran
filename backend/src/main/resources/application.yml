@@ -138,7 +138,21 @@ management:
   endpoints:
     web:
       exposure:
-        include: health
+        # health and info are public; prometheus needs an administrator (SecurityConfig), and the
+        # reverse proxy does not forward /actuator/prometheus at all.
+        include: health,info,prometheus
+  endpoint:
+    health:
+      # The answer is up or down, never a list of which databases and disks are named.
+      show-details: never
+  info:
+    build:
+      enabled: true
+    git:
+      enabled: false
+  metrics:
+    tags:
+      application: smaran
   health:
     # Nothing is stored only in Redis and no code reads it, so its absence must
     # not mark the application unhealthy.
@@ -218,6 +232,13 @@ smaran:
     jwt-secret: test-only-secret-test-only-secret-test-32
     open-demo: false
 
+management:
+  prometheus:
+    metrics:
+      export:
+        # Spring Boot switches metric export off under test; the integration tests read it.
+        enabled: true
+
 ---
 # ---------------------------------------------------------------------------
 # prod — everything comes from the environment. StartupChecks refuses to boot
@@ -228,7 +249,17 @@ spring:
     activate:
       on-profile: prod
 
+  # Nothing reads Redis (see spring.data.redis above), so production does not connect to one.
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
+      - org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration
+
 smaran:
   security:
     jwt-secret: ${SMARAN_JWT_SECRET:}
     open-demo: false
+  cors:
+    # Behind the reverse proxy the browser sees one origin and CORS is not used; this is only the
+    # public address, for a browser that sends an Origin header anyway.
+    allowed-origins: ${SMARAN_CORS:}

@@ -1,0 +1,119 @@
+# Security checks that are slower or broader than the per-push set in ci.yml.
+#
+#   codeql         static analysis of the Java, TypeScript and Python (results in the Security tab)
+#   audits         the npm and pip audits, including the development tooling that ci.yml leaves out
+#                  (the backend's libraries are scanned in the built image, below: exact, and no network)
+#   images         Trivy on the images as built from master, with fixed findings failing the run
+#   secrets        gitleaks over the whole history
+#
+# Runs on every pull request, on pushes to master, and every Monday, because a dependency that was clean
+# on Friday can have an advisory on Monday without a single line of ours changing.
+name: security
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+  schedule:
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  codeql:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [java-kotlin, javascript-typescript, python]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        if: matrix.language == 'java-kotlin'
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: maven
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          queries: security-extended
+          build-mode: ${{ matrix.language == 'java-kotlin' && 'manual' || 'none' }}
+      - name: Build the backend for analysis
+        if: matrix.language == 'java-kotlin'
+        working-directory: backend
+        run: mvn -B -q -DskipTests -DskipITs package
+      - uses: github/codeql-action/analyze@v3
+        with:
+          category: /language:${{ matrix.language }}
+
+  audits:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: npm audit, the packages that ship (fails on high)
+        working-directory: frontend
+        run: npm audit --omit=dev --audit-level=high
+      - name: npm audit, everything including build tools (reported, does not fail)
+        working-directory: frontend
+        run: npm audit --audit-level=high || echo "::warning::advisories in development tooling; see the log and Dependabot"
+      - name: npm audit, the end-to-end tests (reported)
+        working-directory: e2e/playwright
+        run: npm audit --audit-level=high || echo "::warning::advisories in the Playwright tooling"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - name: pip-audit
+        run: |
+          pip install pip-audit
+          pip-audit -r data-science/requirements.txt
+
+  images:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build both images
+        run: |
+          docker build -t smaran-backend:scan backend
+          docker build -t smaran-frontend:scan frontend
+      - name: Trivy, backend image
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          version: v0.75.0
+          image-ref: smaran-backend:scan
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          trivyignores: .trivyignore
+      - name: Trivy, frontend image
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          version: v0.75.0
+          image-ref: smaran-frontend:scan
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          trivyignores: .trivyignore
+
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,27 @@
+# Caddy terminates TLS and forwards everything to the PWA container, which serves the app and
+# forwards /api to the backend. Caddy obtains and renews the certificate by itself: the domain's
+# A record must point at this machine and ports 80 and 443 must be reachable.
+#
+# With DOMAIN=localhost Caddy uses its own local certificate instead, which is how the stack is tried
+# on one machine.
+{$DOMAIN} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-Server
+	}
+
+	# A caller's own X-Request-Id is replaced, so the id in the logs is one this server made. X-Forwarded-*
+	# are Caddy's own (it overwrites anything the client sent).
+	reverse_proxy frontend:8080 {
+		header_up X-Request-Id {http.request.uuid}
+		# The live dashboard is a stream: send each event as it is written.
+		flush_interval -1
+	}
+
+	log {
+		output stdout
+		format json
+	}
+}

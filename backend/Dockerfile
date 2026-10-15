@@ -1,32 +1,37 @@
 # Build and run the Smaran backend.
 #
-# Two stages so the runtime image carries a JRE and a jar, not a JDK and a
-# Maven cache — this is meant to run on a modest VM (AWS EC2 or NIC cloud),
-# not a build server.
+# Two stages: the runtime image carries a JRE and one jar, not a JDK and a Maven
+# cache. It runs as an unprivileged user, holds no secret (everything comes from
+# the environment at start), and reports its own health.
 
 FROM maven:3.9-eclipse-temurin-21 AS build
 WORKDIR /build
 
 # Dependencies first: a code change must not re-download the internet.
+#
+# Maven Central answers "429 Too Many Requests" to the shared addresses CI runs on, now and then, and sometimes
+# for minutes. Each Maven step is therefore tried up to four times, 30 seconds apart; a build that is really
+# broken still fails, four tries later.
 COPY pom.xml .
-RUN mvn -B -q dependency:go-offline
+RUN n=0; until mvn -B -q dependency:go-offline; do n=$((n+1)); [ "$n" -ge 4 ] && exit 1; echo "maven: try $n failed, waiting"; sleep 30; done
 
 COPY src ./src
-RUN mvn -B -q -DskipTests package
+RUN n=0; until mvn -B -q -DskipTests package; do n=$((n+1)); [ "$n" -ge 4 ] && exit 1; echo "maven: try $n failed, waiting"; sleep 30; done \
+ && mv target/smaran-backend-*.jar app.jar
 
 FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
 
 # Never run as root; the storage volume is owned by this user.
 RUN addgroup -S smaran && adduser -S smaran -G smaran
-COPY --from=build /build/target/smaran-backend-*.jar app.jar
+COPY --from=build /build/app.jar app.jar
 RUN mkdir -p /app/storage && chown -R smaran:smaran /app
 USER smaran
 
 EXPOSE 8080
-ENV JAVA_OPTS="-XX:MaxRAMPercentage=75"
+ENV JAVA_OPTS="-XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError"
 
-HEALTHCHECK --interval=30s --timeout=3s --start-period=40s \
-  CMD wget -qO- http://localhost:8080/actuator/health || exit 1
+HEALTHCHECK --interval=15s --timeout=3s --start-period=120s --retries=8 \
+  CMD wget -qO- http://localhost:8080/actuator/health | grep -q '"status":"UP"' || exit 1
 
 ENTRYPOINT ["sh", "-c", "exec java $JAVA_OPTS -jar app.jar"]

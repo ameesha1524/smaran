@@ -36,14 +36,17 @@ public class StartupChecks implements InitializingBean {
             "test-only-secret-test-only-secret-test-32");
 
     private final String jwtSecret;
+    private final String dbPassword;
     private final boolean openDemo;
     private final boolean relaxed;
 
     public StartupChecks(
             @Value("${smaran.security.jwt-secret:}") String jwtSecret,
             @Value("${smaran.security.open-demo:false}") boolean openDemo,
+            @Value("${spring.datasource.password:}") String dbPassword,
             Environment environment) {
         this.jwtSecret = jwtSecret;
+        this.dbPassword = dbPassword;
         this.openDemo = openDemo;
         this.relaxed = environment.acceptsProfiles(Profiles.of("dev", "demo", "test"))
                 && !environment.acceptsProfiles(Profiles.of("prod"));
@@ -51,7 +54,7 @@ public class StartupChecks implements InitializingBean {
 
     @Override
     public void afterPropertiesSet() {
-        String problem = problem(jwtSecret, openDemo, relaxed);
+        String problem = problem(jwtSecret, openDemo, relaxed, dbPassword);
         if (problem != null) {
             throw new IllegalStateException(problem);
         }
@@ -67,8 +70,15 @@ public class StartupChecks implements InitializingBean {
         }
     }
 
-    /** Why this configuration may not start, or null if it may. Never includes the secret itself. */
+    /** The database password the repository itself uses, and so no secret. */
+    static final Set<String> KNOWN_DB_PASSWORDS = Set.of("smaran", "password", "postgres", "changeme", "change-me");
+
     static String problem(String jwtSecret, boolean openDemo, boolean relaxed) {
+        return problem(jwtSecret, openDemo, relaxed, "a-real-database-password");
+    }
+
+    /** Why this configuration may not start, or null if it may. Never includes a secret itself. */
+    static String problem(String jwtSecret, boolean openDemo, boolean relaxed, String dbPassword) {
         if (relaxed) {
             return null;
         }
@@ -86,6 +96,10 @@ public class StartupChecks implements InitializingBean {
         }
         if (openDemo) {
             return "smaran.security.open-demo is on. An unauthenticated API is only allowed in the dev profile.";
+        }
+        if (dbPassword == null || dbPassword.isBlank() || KNOWN_DB_PASSWORDS.contains(dbPassword.toLowerCase())) {
+            return "SMARAN_DB_PASSWORD is not set, or is a value from this repository. Outside the dev, demo and test "
+                    + "profiles the database needs a real password.";
         }
         return null;
     }

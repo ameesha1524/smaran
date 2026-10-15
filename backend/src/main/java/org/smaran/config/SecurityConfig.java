@@ -13,6 +13,8 @@ import org.springframework.security.config.annotation.web.configuration.EnableWe
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
@@ -60,7 +62,10 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> {
                     // /me needs a sign-in; the rest of /api/auth is how you get one.
                     auth.requestMatchers("/api/auth/me").authenticated();
-                    auth.requestMatchers("/api/auth/**", "/actuator/health").permitAll();
+                    auth.requestMatchers("/api/auth/**").permitAll();
+                    // Liveness and the build that is running are public; everything else the
+                    // actuator offers (metrics) is for an administrator.
+                    auth.requestMatchers("/actuator/health", "/actuator/health/**", "/actuator/info").permitAll();
                     // Spring re-dispatches a thrown status to /error without the
                     // caller's token. Left closed, every 404 and 401 above came
                     // back as a bare 403 — including the deliberate "404, not
@@ -79,7 +84,7 @@ public class SecurityConfig {
                         // rest, per patient, on every request.
                         auth.requestMatchers("/api/report/**").hasAnyRole("DOCTOR", "CAREGIVER", "ADMIN");
                         auth.requestMatchers("/api/caregiver/**").hasAnyRole("CAREGIVER", "DOCTOR", "ADMIN");
-                        auth.requestMatchers("/api/admin/**").hasRole("ADMIN");
+                        auth.requestMatchers("/api/admin/**", "/actuator/**").hasRole("ADMIN");
                         auth.requestMatchers("/api/doctor/**").hasRole("DOCTOR");
                         // The tablet's own surface. Nothing else accepts a device token
                         // (AccessGuard refuses it), and nothing here accepts a person's.
@@ -89,6 +94,18 @@ public class SecurityConfig {
                 })
                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
+    }
+
+    /**
+     * Accounts are looked up by the sign-in service and proven by a signed token, never by Spring's own user store.
+     * Without this bean Spring creates a default user with a random password and writes that password to the log.
+     * This one knows nobody.
+     */
+    @Bean
+    public UserDetailsService noDefaultUser() {
+        return username -> {
+            throw new UsernameNotFoundException("no such user");
+        };
     }
 
     @Bean

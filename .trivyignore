@@ -1,0 +1,23 @@
+# Findings accepted on purpose. Each entry says why it does not apply to this application, and carries an
+# expiry (exp:) after which the scan fails again, so that an exception is looked at again and not forgotten.
+# Format: <id> exp:<date>, with the reason on the comment line above it. Nothing is ignored without a reason.
+#
+# Spring Framework 6.2.19 is the last open-source release of the 6.2 line (checked on Maven Central, 2026-10-15).
+# These three are fixed only in Spring Framework 7 (Spring Boot 4), a major upgrade. Each needs a feature this
+# application does not use. Verified by reading the code: 11 @RestController classes, no @Controller, no
+# ViewResolver or template engine (no Thymeleaf, FreeMarker, Mustache), no src/main/resources/templates, no
+# XsltView, no RouterFunction or HandlerFunction. WebFlux is on the classpath only for WebClient.
+# To check again: grep -rn "XsltView\|RouterFunction\|ModelAndView\|@Controller" backend/src/main
+# The way to remove all three is the move to Spring Boot 4 (tracked as PROGRESS.md H15).
+
+# Stream corruption in Server-Sent Events "with view fragments" (server-rendered HTML fragments). The dashboard's
+# stream sends JSON through SseEmitter and renders no view.
+CVE-2026-47890 exp:2027-01-15
+
+# Header predicate bypass in a pre-flight request, for WebFlux *functional endpoints* run under DispatcherServlet.
+# There are no functional endpoints; CORS is handled by Spring Security's CORS configuration.
+CVE-2026-47892 exp:2027-01-15
+
+# SSRF and RCE through XsltView in Spring MVC when a "/**" mapping renders a view with no explicit name.
+# There is no XsltView, no view rendering and no catch-all view mapping.
+CVE-2026-47884 exp:2027-01-15

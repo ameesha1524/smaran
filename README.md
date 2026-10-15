@@ -89,8 +89,15 @@ three days. Pairing is the one thing that needs the server, once.
 docker compose up --build       # PWA :8081 · API :8080, demo profile
 ```
 
-For a production-shaped start, set `SMARAN_PROFILE=prod` and
-`SMARAN_JWT_SECRET=$(openssl rand -base64 48)`.
+### Production
+
+One VM, Docker Compose, Caddy for HTTPS, images from GHCR. A merge to `master` that passes CI is built, published, deployed,
+smoke-tested over the public address, and put back if the smoke test fails. Every variable is in `.env.example`.
+
+- [`docs/RUNBOOK.md`](docs/RUNBOOK.md): set up the machine, deploy, roll back, rotate a secret, restore a backup, add a doctor or a game.
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md): what runs where, and the path from a merge to a running release.
+- `make rehearse` runs the deploy, rollback, backup and restore on this machine; `make e2e` runs the browser tests.
+
 
 ---
 

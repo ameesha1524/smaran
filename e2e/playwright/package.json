@@ -1,0 +1,13 @@
+{
+  "name": "smaran-e2e",
+  "private": true,
+  "version": "0.0.0",
+  "description": "End-to-end tests of the running stack. BASE_URL points at it; see README in this folder's config.",
+  "scripts": {
+    "test": "playwright test",
+    "install-browsers": "playwright install --with-deps chromium"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.49.1"
+  }
+}

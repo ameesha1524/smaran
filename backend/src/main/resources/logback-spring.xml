@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Logging. In the prod profile (or with the json profile added) every line is one JSON object carrying the
+  request id; elsewhere Spring Boot's ordinary console format is used.
+-->
+<configuration>
+  <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+
+  <springProfile name="prod | json">
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+      <encoder class="ch.qos.logback.core.encoder.LayoutWrappingEncoder">
+        <layout class="org.smaran.observability.JsonLogLayout"/>
+      </encoder>
+    </appender>
+  </springProfile>
+
+  <springProfile name="!prod &amp; !json">
+    <include resource="org/springframework/boot/logging/logback/console-appender.xml"/>
+  </springProfile>
+
+  <root level="INFO">
+    <appender-ref ref="CONSOLE"/>
+  </root>
+</configuration>

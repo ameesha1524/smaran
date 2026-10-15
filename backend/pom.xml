@@ -7,7 +7,7 @@
   <parent>
     <groupId>org.springframework.boot</groupId>
     <artifactId>spring-boot-starter-parent</artifactId>
-    <version>3.3.4</version>
+    <version>3.5.16</version>
     <relativePath/>
   </parent>
 
@@ -20,6 +20,13 @@
   <properties>
     <java.version>21</java.version>
     <jjwt.version>0.12.6</jjwt.version>
+    <!-- Security patch releases newer than what Spring Boot 3.5.16 manages. Trivy fails the build on a HIGH or
+         CRITICAL finding that has a fix, and each of these has one. Remove an override once Boot manages a
+         version at least this new (mvn dependency:tree shows what it picks). -->
+    <tomcat.version>10.1.61</tomcat.version>
+    <netty.version>4.1.139.Final</netty.version>
+    <jackson-bom.version>2.21.7</jackson-bom.version>
+    <postgresql.version>42.7.14</postgresql.version>
     <!-- Newer than Spring Boot's managed 1.19.x: that talks Docker API 1.32,
          which Docker Engine 29 refuses (HTTP 400), so tests could not start
          a container on current Docker Desktop. -->
@@ -76,11 +83,15 @@
       <artifactId>spring-boot-starter-validation</artifactId>
     </dependency>
 
-    <!-- /actuator/health, for the container health check and the deploy script.
-         Only `health` is exposed (application.yml). -->
+    <!-- /actuator/health and /actuator/info are public, for the container health check and the
+         deploy script. /actuator/prometheus is for administrators only (SecurityConfig). -->
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-actuator</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.micrometer</groupId>
+      <artifactId>micrometer-registry-prometheus</artifactId>
     </dependency>
 
     <dependency>
@@ -191,6 +202,13 @@
       <plugin>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-maven-plugin</artifactId>
+        <executions>
+          <execution>
+            <goals>
+              <goal>build-info</goal>
+            </goals>
+          </execution>
+        </executions>
         <configuration>
           <excludes>
             <exclude>

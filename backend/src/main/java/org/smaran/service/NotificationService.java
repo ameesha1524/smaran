@@ -52,18 +52,20 @@ public class NotificationService {
      */
     public void recognised(Patient patient, FamilyMember member) {
         events.publish(patient.getId(), "recognised", Map.of("memberId", member.getId()));
-        log.info("recognition → {} ({} of {})", member.getName(), member.getRelationship(), patient.getId());
+        // Ids only: a name and a relationship are the family's, and logs are read by people who are not.
+        log.info("recognition → member {} of {}", member.getId(), patient.getId());
     }
 
     /** A reminder to her tablet. Silent by design; the app plays a wind chime. */
     public void pushReminder(String deviceToken, String title, String body, String imageUrl) {
         if (fcmKey.isBlank() || deviceToken == null) {
-            log.info("[fcm not configured] push → {}: {}", deviceToken, body);
+            // Neither the device token nor the text goes to the log: the text is about a medicine, and the token addresses her tablet.
+            log.info("[fcm not configured] reminder push not sent");
             return;
         }
         // TODO(pilot): FirebaseMessaging.getInstance().send(...) with the pill
         // photograph as the notification image and no sound.
-        log.info("push → {}: {} ({})", deviceToken, body, imageUrl);
+        log.info("reminder push sent");
     }
 
     /**
@@ -72,10 +74,10 @@ public class NotificationService {
      */
     public void smsCaregiver(AppUser caregiver, String message) {
         if (twilioSid.isBlank() || caregiver.getPhone() == null) {
-            log.info("[twilio not configured] sms → {}: {}", caregiver.getEmail(), message);
+            log.info("[twilio not configured] caregiver sms not sent to user {}", caregiver.getId());
             return;
         }
         // TODO(pilot): Twilio Message.creator(...).create()
-        log.info("sms → {}: {}", caregiver.getPhone(), message);
+        log.info("caregiver sms sent to user {}", caregiver.getId());
     }
 }
