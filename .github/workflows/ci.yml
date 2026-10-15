@@ -193,7 +193,10 @@ jobs:
         run: |
           pip install pip-audit
           pip-audit -r data-science/requirements.txt
-      - name: Trivy on the repository (Maven, npm and pip lock files, and secrets)
+      # backend/ is left out: Trivy would resolve the pom's parents from Maven Central (rate-limited from shared runner
+      # addresses, which failed this job once with a 429). The backend's libraries are scanned exactly, in the
+      # built image, by the docker-build job.
+      - name: Trivy on the repository (npm and pip lock files, and secrets)
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           version: v0.75.0
@@ -203,7 +206,7 @@ jobs:
           ignore-unfixed: true
           exit-code: "1"
           trivyignores: .trivyignore
-          skip-dirs: frontend/node_modules,e2e/playwright/node_modules
+          skip-dirs: frontend/node_modules,e2e/playwright/node_modules,backend
 
   e2e:
     runs-on: ubuntu-latest

@@ -1,7 +1,8 @@
 # Security checks that are slower or broader than the per-push set in ci.yml.
 #
 #   codeql         static analysis of the Java, TypeScript and Python (results in the Security tab)
-#   audits         every dependency audit, including the development tooling that ci.yml leaves out
+#   audits         the npm and pip audits, including the development tooling that ci.yml leaves out
+#                  (the backend's libraries are scanned in the built image, below: exact, and no network)
 #   images         Trivy on the images as built from master, with fixed findings failing the run
 #   secrets        gitleaks over the whole history
 #
@@ -78,22 +79,6 @@ jobs:
         run: |
           pip install pip-audit
           pip-audit -r data-science/requirements.txt
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: 21
-          cache: maven
-      - name: Maven dependencies (Trivy reads the pom's resolved tree)
-        uses: aquasecurity/trivy-action@v0.36.0
-        with:
-          version: v0.75.0
-          scan-type: fs
-          scan-ref: backend
-          scanners: vuln
-          severity: HIGH,CRITICAL
-          ignore-unfixed: true
-          exit-code: "1"
-          trivyignores: .trivyignore
 
   images:
     runs-on: ubuntu-latest
