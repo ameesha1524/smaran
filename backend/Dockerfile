@@ -4,7 +4,7 @@
 # cache. It runs as an unprivileged user, holds no secret (everything comes from
 # the environment at start), and reports its own health.
 
-FROM maven:3.9-eclipse-temurin-21 AS build
+FROM maven:3.9-eclipse-temurin-26 AS build
 WORKDIR /build
 
 # Dependencies first: a code change must not re-download the internet.
