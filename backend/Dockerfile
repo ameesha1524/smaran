@@ -19,7 +19,7 @@ COPY src ./src
 RUN n=0; until mvn -B -q -DskipTests package; do n=$((n+1)); [ "$n" -ge 4 ] && exit 1; echo "maven: try $n failed, waiting"; sleep 30; done \
  && mv target/smaran-backend-*.jar app.jar
 
-FROM eclipse-temurin:21-jre-alpine
+FROM eclipse-temurin:25-jre-alpine
 WORKDIR /app
 
 # Never run as root; the storage volume is owned by this user.
