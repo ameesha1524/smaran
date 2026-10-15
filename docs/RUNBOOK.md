@@ -98,7 +98,7 @@ What `deploy.sh` does, in this order, and stops at the first thing that fails:
 1. takes the lock (a second deploy at the same time says so and exits 3);
 2. a backup of the database and media (`SKIP_BACKUP=1` skips it, do not);
 3. pulls the two images and starts the stack on them (`up -d --wait`);
-4. waits up to 180 s for `/actuator/health` to say UP **and** the page to be served, through the public address;
+4. waits up to 300 s for `/actuator/health` to say UP **and** the page to be served, through the public address (the backend takes one to two minutes to start on a small VM);
 5. runs `smoke.sh`: signs in as the smoke account, pairs a tablet to the smoke patient, has it send a session, reads
    the dashboard to see the session there, removes the tablet;
 6. only then writes `state/current_tag` (and the old one to `state/previous_tag`).

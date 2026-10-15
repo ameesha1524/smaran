@@ -3,7 +3,7 @@
 Read this at the start of every session, after `docs/MASTER_PROMPT.md`.
 All patient data in this repository is synthetic or demo data.
 
-Last updated: 2026-10-14 (end of Phase 6, before CI has run on it).
+Last updated: 2026-10-15 (Phase 6, PR #8 open; CI being worked through).
 
 ## Phase status
 
@@ -37,6 +37,7 @@ Last updated: 2026-10-14 (end of Phase 6, before CI has run on it).
 | H4 | Review the commit `f388fe8` | It is 37 files of earlier work that nobody has read as a diff | It is the base for Phase 1 |
 | H5 | **Everything in Appendix E, and `docs/RUNBOOK.md` "The machine, one time"**: a VM with Docker, a domain pointing at it, the VM's `.env`, the GitHub secrets `VM_HOST` `VM_USER` `VM_SSH_KEY` `DOMAIN`, the `production` environment, the variable `DEPLOY_ENABLED=true`, GHCR package visibility, branch protection on `master` | Until these exist, merging builds and pushes images and **does not deploy**. "Pushing to master deploys" and "https://domain serves the app" cannot be shown without a VM and a domain | The deploy job is skipped (by design, not red) |
 | H13 | **Copy the backups off the VM** (runbook, "Backups and restore") | They are written to a volume on the same machine: that survives a bad deploy and a deleted row, not the loss of the VM | Nothing is lost until the machine is |
+| H15 | **Accept or remove three Spring Framework CVEs** (CVE-2026-47890, -47892, -47884) | Spring Framework 6.2.19 is the last open-source 6.2 release; the fixes are only in Spring Framework 7, which is Spring Boot 4, a major migration (Hibernate, Spring Security, Jackson). Each CVE needs a feature this app does not use (view fragments, WebFlux functional endpoints, XsltView), checked in the code and recorded in `.trivyignore` with an expiry of 2027-01-15, when the scan fails again | They are ignored by the scan; the reasons are in `.trivyignore`. Decide whether to schedule the Boot 4 move before then |
 | H14 | **Do one deliberately broken deploy on the real VM** | It is the Phase 6 done-when. It was shown on one machine with the real scripts (`deploy/rehearse.sh`), not over SSH to a VM | The rehearsal is the evidence we have |
 
 ## Decisions made
@@ -630,7 +631,8 @@ Branch `phase-6-devops`, from `master` after PR #7.
 frontend:  tsc -b and tsc -p tsconfig.test.json → clean;  npm test → 145 passed (8 files)
            npm audit --omit=dev --audit-level=high → exit 0 (2 moderate advisories remain in shipped packages)
 backend:   mvn -o verify -Dsmaran.build.dir=C:/Users/amees/smaran-build → BUILD SUCCESS
-           unit 107, 0 failures;  integration (PostgreSQL 16 in Testcontainers) 429, 0 failures
+           unit 108, 0 failures;  integration (PostgreSQL 16 in Testcontainers) 429, 0 failures
+           (after the Spring Boot 3.3.4 to 3.5.16 upgrade below; 107 and 429 before it)
            new this phase: ObservabilityTest, ObservabilityIT (3), a matrix row for /actuator/prometheus,
                            StartupChecksTest (database password), PairingServiceTest (counters)
 deploy/rehearse.sh (the real scripts, the production compose file, Caddy with a local certificate, a new database per run):
@@ -655,6 +657,14 @@ ci.yml, cd.yml, security.yml and dependabot.yml parse as YAML. (That check found
 - Duplicate security headers from both proxies (`proxy_hide_header`); "Invalid CORS request" through a proxy on a non-standard port (`Host $http_host`, `CORS_ORIGINS`).
 - Frontend: 14 npm advisories reduced by `npm audit fix` (lock file only); `pillow` pinned to 12.3.0.
 - The Spring Boot `repackage` goal was declared twice; removed.
+- **Found by the first CI run on GitHub:**
+  - `trivy-action@0.28.0` does not exist (tags carry a `v`), and the Trivy release it installs was withdrawn: now `trivy-action@v0.36.0` with Trivy `v0.75.0` pinned.
+  - **The backend image had 68 HIGH or CRITICAL findings with fixes** (Tomcat authentication bypass and RCE, Spring Security, Netty, Jackson, the PostgreSQL driver) because Spring Boot 3.3.4 is old. Now **Spring Boot 3.5.16**, with Tomcat 10.1.61, Netty 4.1.139, Jackson 2.21.7 and PostgreSQL 42.7.14 overridden in `pom.xml` (Boot's own are still behind the fixes). 4 CRITICAL findings are left, 3 distinct CVEs, in Spring Framework 6.2.19, fixed only in Spring Framework 7 (Boot 4): see H15.
+  - The frontend image had 40 findings in OS packages (OpenSSL, libexpat, libpng, libxml2 ...) from the old `nginx-unprivileged:1.27-alpine`: now `1.30-alpine` with `apk upgrade`.
+  - Trivy's filesystem scan resolved the pom from Maven Central and was answered 429 from the shared runner address: the repository scan no longer includes `backend/` (the image scan checks the built jar exactly).
+  - **CodeQL, two real alerts:** a regex in the Playwright test whose `\.` was lost in a template literal (so it matched any character); and the request filter logging the raw request path (now stripped of control characters and capped at 200, with a test).
+  - **A bug in `deploy.sh`'s rollback**, found when the rehearsal was re-run on the Spring Boot 3.5 backend, which starts slower (50 s to 4 minutes on this machine): `up --wait` stopped at the slow backend and left the proxy not started, so the site stayed down after the backend recovered. The rollback now keeps starting what is left until the public address is healthy (`settle`), the backend health check allows about 240 s, and the deploy timeout is 300 s. The rehearsal passes with this (all five stages, exit 0).
+  - Spring printed a generated default password to the log at start-up. A `UserDetailsService` that knows nobody replaces it.
 
 ### Done-when, checked
 
@@ -670,7 +680,7 @@ ci.yml, cd.yml, security.yml and dependabot.yml parse as YAML. (That check found
 - The Prometheus and Grafana compose profile, and preview environments (P1).
 - An alert rule for a burst of pairing failures from many addresses (issue 30). The counters it needs exist; nothing watches them.
 - The media half of `restore.sh` was not run: the one test command was refused by the tool's removal safety check, and I did not work around that. Its code lays files over what is there and deletes nothing. The database half is exercised in `rehearse.sh`.
-- Trivy was not run locally (the container run failed on this machine), so its first scan is in CI. The base is Spring Boot 3.3.4, which is old: expect findings with fixes, which fail the build until the dependency is raised or a finding is justified in `.trivyignore`.
+- Trivy was not run locally (the container run failed on this machine); its scans run in CI. Three Spring Framework CVEs are accepted in `.trivyignore` with reasons and an expiry (H15).
 - Self-hosting the fonts and the MediaPipe model (issue 70).
 
 ## Known issues

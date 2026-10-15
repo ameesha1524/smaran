@@ -12,7 +12,8 @@ const PASSWORD = 'correct horse battery staple'
 // Trying the production stack on one machine means a certificate made by Caddy's own local authority, which a
 // browser will not let a Service Worker use. That is the only thing excused, and only for localhost.
 const LOCAL_CERT = (process.env.BASE_URL ?? '').startsWith('https://localhost') ? '|SSL certificate error' : ''
-const NOT_OURS = new RegExp(`fonts\.(googleapis|gstatic)|jsdelivr|storage\.googleapis|ERR_|Failed to load resource${LOCAL_CERT}`)
+// In a template literal a single backslash is dropped, so each dot is escaped twice to reach the RegExp.
+const NOT_OURS = new RegExp(`fonts\\.(googleapis|gstatic)|jsdelivr|storage\\.googleapis|ERR_|Failed to load resource${LOCAL_CERT}`)
 
 function watchForTrouble(page: Page, into: string[]) {
   page.on('console', (m) => {

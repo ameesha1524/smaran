@@ -45,10 +45,19 @@ public class RequestIdFilter extends OncePerRequestFilter {
             chain.doFilter(request, response);
         } finally {
             if (!request.getRequestURI().startsWith("/actuator/health")) {
-                log.info("{} {} {} {}ms", request.getMethod(), request.getRequestURI(), response.getStatus(),
+                log.info("{} {} {} {}ms", request.getMethod(), printable(request.getRequestURI()), response.getStatus(),
                         (System.nanoTime() - start) / 1_000_000);
             }
             MDC.remove(MDC_KEY);
         }
+    }
+
+    /**
+     * The path as the caller wrote it, which is theirs to choose: control characters (a line break in a
+     * plain-text log would forge a line) are replaced and the length is bounded.
+     */
+    static String printable(String path) {
+        String clean = path.replaceAll("[\\r\\n]", "_").replaceAll("\\p{Cntrl}", "_");
+        return clean.length() > 200 ? clean.substring(0, 200) + "..." : clean;
     }
 }

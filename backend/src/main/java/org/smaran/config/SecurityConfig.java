@@ -13,6 +13,8 @@ import org.springframework.security.config.annotation.web.configuration.EnableWe
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
@@ -92,6 +94,18 @@ public class SecurityConfig {
                 })
                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
+    }
+
+    /**
+     * Accounts are looked up by the sign-in service and proven by a signed token, never by Spring's own user store.
+     * Without this bean Spring creates a default user with a random password and writes that password to the log.
+     * This one knows nobody.
+     */
+    @Bean
+    public UserDetailsService noDefaultUser() {
+        return username -> {
+            throw new UsernameNotFoundException("no such user");
+        };
     }
 
     @Bean

@@ -18,7 +18,7 @@
 #
 # Environment (all optional):
 #   HEALTH_URL           default https://$DOMAIN/actuator/health (DOMAIN is read from .env)
-#   HEALTH_TIMEOUT       seconds to wait for health, default 180
+#   HEALTH_TIMEOUT       seconds to wait for health, default 300 (the backend takes one to two minutes to start on a small VM)
 #   SKIP_PULL=1          do not pull (the images are already on this machine: tests)
 #   SKIP_BACKUP=1        do not take the pre-deploy backup
 #   CURL_OPTS            extra curl options, for example -k for a local certificate
@@ -37,20 +37,32 @@ set -a; . ./.env; set +a
 export GHCR_OWNER="${GHCR_OWNER:?GHCR_OWNER is not set (in .env or the environment)}"
 COMPOSE=(docker compose -f docker-compose.prod.yml --env-file .env)
 HEALTH_URL="${HEALTH_URL:-https://${DOMAIN:?DOMAIN is not set in .env}/actuator/health}"
-HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-180}"
+HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-300}"
 CURL_OPTS="${CURL_OPTS:-}"
 PREV="$(cat state/current_tag 2>/dev/null || true)"
 
 log() { printf '%s deploy: %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"; }
 
-wait_healthy() {
-  local deadline=$(( $(date +%s) + HEALTH_TIMEOUT ))
+wait_healthy() { # wait_healthy [SECONDS]
+  local deadline=$(( $(date +%s) + ${1:-$HEALTH_TIMEOUT} ))
   while [ "$(date +%s)" -lt "$deadline" ]; do
     # Both the API's health and the page itself, through the same public path a person uses.
     if curl -fsS $CURL_OPTS --max-time 5 "$HEALTH_URL" 2>/dev/null | grep -q '"status":"UP"'        && curl -fsS $CURL_OPTS --max-time 5 "${HEALTH_URL%/actuator/health}/" 2>/dev/null | grep -q 'id="root"'; then
       return 0
     fi
     sleep 3
+  done
+  return 1
+}
+
+# Like wait_healthy, but also keeps starting whatever compose left behind. `up --wait` stops at the first dependency
+# that is slow or unhealthy at that moment: a backend still starting leaves the proxy not started at all, and the
+# backend becoming healthy a minute later does not start it. The rollback must not end with the site down for that.
+settle() {
+  local deadline=$(( $(date +%s) + HEALTH_TIMEOUT ))
+  while [ "$(date +%s)" -lt "$deadline" ]; do
+    wait_healthy 10 && return 0
+    "${COMPOSE[@]}" up -d --remove-orphans >/dev/null 2>&1 || true
   done
   return 1
 }
@@ -70,8 +82,8 @@ rollback() {
   fi
   log "ROLLING BACK to $PREV"
   "${COMPOSE[@]}" logs --tail 80 backend || true
-  up "$PREV"
-  if wait_healthy; then
+  up "$PREV" || log "the stack did not come up in one go; starting what is left"
+  if settle; then
     log "rolled back: $PREV is healthy again"
   else
     log "the rollback itself is not healthy; this needs a person"

@@ -54,7 +54,7 @@ CORS_ORIGINS=https://localhost,https://localhost:$HTTPS_PORT
 EOF
 chmod 600 .env
 
-export SKIP_PULL=1 CURL_OPTS=-k HEALTH_URL="https://localhost:$HTTPS_PORT/actuator/health" HEALTH_TIMEOUT=180
+export SKIP_PULL=1 CURL_OPTS=-k HEALTH_URL="https://localhost:$HTTPS_PORT/actuator/health" HEALTH_TIMEOUT=300
 COMPOSE=(docker compose -f docker-compose.prod.yml --env-file .env)
 health() { curl -fsSk --max-time 5 "$HEALTH_URL" | grep -q '"status":"UP"'; }
 running() { # running SERVICE -> the image tag it is running

@@ -9,6 +9,7 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.LoggerContext;
 import ch.qos.logback.classic.spi.LoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.Map;
@@ -82,5 +83,27 @@ class ObservabilityTest {
     void idDoesNotLeakToTheNextRequest() throws Exception {
         run("proxy-id-12345");
         assertEquals(null, org.slf4j.MDC.get(RequestIdFilter.MDC_KEY));
+    }
+
+    @Test
+    @DisplayName("the request line in the log cannot be forged or made enormous by the path")
+    void pathIsPrintable() throws Exception {
+        assertEquals("/api/x__FORGED_ line", RequestIdFilter.printable("/api/x\r\nFORGED\u0007 line"));
+        assertEquals(203, RequestIdFilter.printable("/" + "a".repeat(5000)).length());
+
+        Logger logger = (Logger) LoggerFactory.getLogger(RequestIdFilter.class);
+        ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/x\nINFO forged");
+            new RequestIdFilter().doFilter(request, new MockHttpServletResponse(), new MockFilterChain());
+            assertEquals(1, appender.list.size());
+            String message = appender.list.get(0).getFormattedMessage();
+            assertFalse(message.contains("\n"), message);
+            assertTrue(message.contains("/api/x_INFO forged"), message);
+        } finally {
+            logger.detachAppender(appender);
+        }
     }
 }
