@@ -57,7 +57,7 @@ public class RequestIdFilter extends OncePerRequestFilter {
      * plain-text log would forge a line) are replaced and the length is bounded.
      */
     static String printable(String path) {
-        String clean = path.replaceAll("[\\r\\n]", "_").replaceAll("\\p{Cntrl}", "_");
+        String clean = path.replace("\n", "_").replace("\r", "_").replaceAll("\\p{Cntrl}", "_");
         return clean.length() > 200 ? clean.substring(0, 200) + "..." : clean;
     }
 }

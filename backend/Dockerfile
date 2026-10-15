@@ -8,11 +8,15 @@ FROM maven:3.9-eclipse-temurin-21 AS build
 WORKDIR /build
 
 # Dependencies first: a code change must not re-download the internet.
+#
+# Maven Central answers "429 Too Many Requests" to the shared addresses CI runs on, now and then, and sometimes
+# for minutes. Each Maven step is therefore tried up to four times, 30 seconds apart; a build that is really
+# broken still fails, four tries later.
 COPY pom.xml .
-RUN mvn -B -q dependency:go-offline
+RUN n=0; until mvn -B -q dependency:go-offline; do n=$((n+1)); [ "$n" -ge 4 ] && exit 1; echo "maven: try $n failed, waiting"; sleep 30; done
 
 COPY src ./src
-RUN mvn -B -q -DskipTests package \
+RUN n=0; until mvn -B -q -DskipTests package; do n=$((n+1)); [ "$n" -ge 4 ] && exit 1; echo "maven: try $n failed, waiting"; sleep 30; done \
  && mv target/smaran-backend-*.jar app.jar
 
 FROM eclipse-temurin:21-jre-alpine
