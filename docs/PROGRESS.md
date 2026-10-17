@@ -3,7 +3,7 @@
 Read this at the start of every session, after `docs/MASTER_PROMPT.md`.
 All patient data in this repository is synthetic or demo data.
 
-Last updated: 2026-10-17 (Phase 7 written and verified locally; its PR is the next step).
+Last updated: 2026-10-17 (Phase 7: PR #25 open, all CI checks green; waiting for the owner to merge).
 
 ## Phase status
 
@@ -16,16 +16,16 @@ Last updated: 2026-10-17 (Phase 7 written and verified locally; its PR is the ne
 | 4. Games to dashboards | **P0 done; P1 items 8, 11, 12, 13 done; 9 and 10 (upload) not** | `phase-4-games` | PR #6 merged into `master` |
 | 5. Data science | **P0 and P1 done; P2: clustering done, sentiment correlation not** | `phase-5-data-science` | Verified; see "Phase 5" below |
 | 6. DevOps | **P0 done; PR #8 merged 2026-10-15.** CI ran green on GitHub and CD built and pushed the images; the deploy job is skipped until H5. P1: Dependabot, SBOM and branch-protection advice done; the Grafana profile and preview environments not | `phase-6-devops` | See "Phase 6" below |
-| 7. Hardening and showcase | **P0 done and verified locally; P1 done (accessibility pass, k6 load test).** Showcase steps 1 to 7 and 9 shown by running; step 8 is shown for CI and the rehearsal, **not for a real VM**. Not yet merged | `phase-7-hardening` | See "Phase 7" and its verification report below |
+| 7. Hardening and showcase | **P0 done and verified locally and in CI (PR #25, all checks green); P1 done (accessibility pass, k6 load test).** Showcase steps 1 to 7 and 9 shown by running; step 8 is shown for CI and the rehearsal, **not for a real VM**. Not yet merged | `phase-7-hardening` | See "Phase 7" and its verification report below |
 
-**Next:** merge the Phase 7 PR after reading its CI run (the new `e2e` job is its first run on a runner). Then the owner's steps: H5 (a VM and a domain), H9 to H12 and H15 (decisions), H16 (a screen-reader pass).
+**Next:** merge the Phase 7 PR (#25; CI is green). Then the owner's steps: H5 (a VM and a domain), H9 to H12 and H15 (decisions), H16 (a screen-reader pass).
 
 ## Needs the human
 
 | # | What | Why | Until then |
 |---|---|---|---|
 | H1 | ~~Install Docker Desktop~~ | Done 2026-10-06 | none |
-| H2 | **Merge the Phase 7 PR**, after reading its CI run | Merging to `master` is the owner's call. The `e2e` job now brings up the demo stack and runs the showcase and accessibility tests; that has never run on a runner | Phase 6 was merged 2026-10-15 |
+| H2 | **Merge the Phase 7 PR (#25)** | Merging to `master` is the owner's call. CI is green, including the `e2e` job that now runs the showcase and accessibility tests on a runner | Phase 6 was merged 2026-10-15 |
 | H16 | **A screen-reader and real-user accessibility pass** on the family and doctor screens, ideally with people who use one every day; and the patient's own screens judged with people like her | The Phase 7 pass was axe-core (WCAG 2.1 A/AA) plus a keyboard walk. Software finds roughly a third of the problems; it cannot say whether a screen makes sense when read aloud | Nothing is known about how these screens read aloud |
 | H9 | **Decide what the family is told, and how often.** As shipped, the default alert (a "watch" or worse, two sessions in a row) fires about 22 times per stable patient-year across six domains; a "decline"-only alert, about 4 | The evaluation (`data-science/results/SUMMARY.md`) measured it on a simulated cohort. Options: show the family only "decline"; require three in a row; cap alerts per patient per month. Each trades detection for quiet | Nothing was changed. The shipped behaviour stands |
 | H10 | **Decide the sundowning guard.** At six sittings per part and an effect size of 0.8, 58% of simulated patients with no late-day dip are flagged at least once in a year | At ten sittings and 1.2 it is 8.5%, and 65% of evaluations for a patient who does have a dip | Nothing was changed |
@@ -714,6 +714,7 @@ Found by running the showcase and the checks, not by reading:
 - **Rollback could leave the site down** (Phase 6's code, found when the rehearsal was re-run on the slower Spring Boot 3.5 backend): `settle()` in `deploy.sh`; health windows widened. Already on `master`.
 - **Spring printed a generated password** at start-up (already on `master`).
 - **Showcase test defects of my own**, each of which would have made a check pass or fail for the wrong reason: a locator that matched the wrong element; a glyph count that assumed nine glyphs where the game has six; a `waitForFunction` the page's CSP forbids (`unsafe-eval`), replaced by an `evaluate` polling helper; "Duck Roll Call" looked for on a page that prints the name before anyone has played; a "not shared" patient who was in fact shared (the seeder grants the doctor `demo-patient`); a `getByText('Her tablet')` that became ambiguous once the tablet's own name was listed (a race: it passed when the list had not loaded yet, and failed on the verification run; now the heading by role).
+- **Two CodeQL alerts in the load-test script** (above), found on the first CI run.
 - **README claims I could not back up**, corrected after checking the code: the API requires consent, not the guardian's name; the server re-scores only Duck Roll Call; the journal keeps the numbers and a one-line gist that no screen shows.
 - **The rehearsal's new check was wrong twice** (my own): it expected 404 where an anonymous caller gets 401 from the ADMIN rule before springdoc is reached; then `wget`'s non-zero exit on a 401 aborted the script under `set -e` without a message. It now requires a refusal and no document. That springdoc itself is off in prod is `OpenApiOffIT`'s job.
 
@@ -783,16 +784,18 @@ No request failed in any run: past its limit the system got slower, it did not d
 | 5. Offline play queued, syncs once, replay idempotent | **Shown** (showcase 5) |
 | 6. Doctor: only shared patients, read-only, 404 otherwise, no journal, family media or raw trials | **Shown** (showcase 6; the authorization matrix in the backend tests is the exhaustive version) |
 | 7. Revoke the tablet: refused and quiet | **Shown** (showcase 7) |
-| 8. CI green, deploy smoke test | **CI green: shown for PR #8 (merged).** For this phase's PR see "CI" below. **The deploy smoke test is shown in the rehearsal, not against a VM** (H5, H14) |
+| 8. CI green, deploy smoke test | **CI green: shown** for PR #25 (all 18 checks on the final commit, including `e2e` on a runner and `docker-build`, which runs the rehearsal; see "CI" below). **The deploy smoke test is shown in the rehearsal, not against a VM** (H5, H14) |
 | 9. `data-science/` reproduces its results with one command | **Shown** (above; 566.8 s, results byte-identical) |
 
-**Not run locally, run by CI:** Trivy (images and filesystem), gitleaks, CodeQL, `pip-audit`. Their results for this phase are in the PR.
+**Not run locally, run by CI:** Trivy (images and filesystem), gitleaks, CodeQL, `pip-audit`.
+
+**CI** (PR #25, commit `0088450`): all checks passed: frontend, backend, datascience, `docker-build` (both images, Trivy, then `deploy/rehearse.sh`), `e2e` (the demo stack, the showcase, a11y and stack specs, on a GitHub runner, the first time), `security` (audits, gitleaks, Trivy), CodeQL for Java, JavaScript/TypeScript and Python, and the new step that regenerates the demo cohort and diffs it against `demo/cohort/`. The first run was not clean: **CodeQL found two alerts (`js/insecure-randomness`) in `loadtest/smaran.k6.js`**, `Math.random()` used for the session id and for choosing which tablet sends. Nothing there needs randomness. The id now comes from `k6/crypto` and tablets and readers are chosen round-robin; the script was re-run against the demo stack (no failed requests, every check passed) and both alerts cleared.
 
 ### Done-when, checked
 
 | Criterion | Result |
 |---|---|
-| The whole showcase script runs, and what fails is fixed; a Playwright test automates steps 2 to 7 | **Yes** (the defects above, all fixed). In CI on every change; its first run on a runner is this PR |
+| The whole showcase script runs, and what fails is fixed; a Playwright test automates steps 2 to 7 | **Yes** (the defects above, all fixed). In CI on every change; its first run on a runner was this PR, and it passed |
 | `README.md` rewritten | **Yes** |
 | OpenAPI via springdoc, non-prod or ADMIN only | **Yes**: ADMIN only, and off in prod; tested both ways |
 | A verification report in `PROGRESS.md` | **Yes** (above) |
