@@ -80,7 +80,7 @@ export function setup() {
 }
 
 export function readDashboard(data) {
-  const id = data.patients[Math.floor(Math.random() * data.patients.length)]
+  const id = data.patients[(__VU * 7 + __ITER) % data.patients.length]
   const r = call('GET', `/api/caregiver/dashboard/${id}`, null, data.token, { kind: 'dashboard' })
   check(r, { 'dashboard 200': (x) => x.status === 200, 'dashboard has domains': (x) => x.body && x.body.indexOf('domains') >= 0 })
 }
@@ -94,8 +94,9 @@ function hex(n) {
 }
 
 export function sendSession(data) {
-  const t = data.tablets[Math.floor(Math.random() * data.tablets.length)]
   counter += 1
+  // Round-robin over the paired tablets (per virtual user), so the load is spread evenly and a run can be repeated.
+  const t = data.tablets[(__VU + counter) % data.tablets.length]
   // Unique for the patient (a second session with the same start is dropped as a duplicate) and not in the future.
   const startedAt =
     ARRIVAL === 'late'
@@ -113,7 +114,7 @@ export function sendSession(data) {
     moodAtStart: 'PEACEFUL',
     difficulty: { tier: 2, params: {} },
     trials: [],
-    contributions: [{ target: 'EXECUTIVE', raw: 40 + Math.random() * 40, confidence: 0.6, because: 'Load test.' }],
+    contributions: [{ target: 'EXECUTIVE', raw: 40 + ((__VU * 13 + counter * 17) % 40), confidence: 0.6, because: 'Load test.' }],
     markers: null,
     precomputedReading: true,
     engineVersion: '1.0.0',
