@@ -371,7 +371,8 @@ test.describe.serial('the showcase: a family, a tablet and a doctor', () => {
   // ---------------------------------------------------------------------------------------------- step 7
   test('7. the caregiver revokes the tablet; it is refused and goes quiet without alarming her', async () => {
     await family.goto(`/caregiver/dashboard/${patientId}`)
-    await expect(family.getByText('Her tablet')).toBeVisible()
+    // The heading, not the text: once the list has loaded, the tablet's own name ("Her tablet") is on the page too.
+    await expect(family.getByRole('heading', { name: 'Her tablet' })).toBeVisible()
     await family.getByRole('button', { name: 'Remove' }).click()
     await family.getByRole('button', { name: 'Yes, remove access' }).click()
     await expect(family.getByText('None yet')).toBeVisible()

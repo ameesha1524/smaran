@@ -145,6 +145,10 @@ secrets live on the VM and nowhere else.
   `pairing_failures_total{reason}`, `pairing_redeemed_total`, `scoring_rescored_total`, `scoring_mismatch_total`,
   plus the JVM and HTTP metrics Micrometer gives for free.
 - **Audit:** who did what to whose data is a table in the database, not a log (`/api/admin/audit`).
+- **The API description:** `/v3/api-docs` (OpenAPI 3, generated from the controllers by springdoc) for an administrator in the
+  development and demo profiles, and switched off in production (`springdoc.api-docs.enabled=false`, and nginx does not forward the path
+  either; `smoke.sh` checks it on every deploy and the rehearsal asks the production backend itself). JSON only: the Swagger UI is a bundle
+  of third-party JavaScript that is not worth shipping in the production image.
 
 ## Data and backups
 
@@ -152,6 +156,15 @@ PostgreSQL holds everything except the photographs and voice notes, which are fi
 `backup` container writes a checked `pg_dump` and a media tarball nightly and before every deploy, keeping 14 daily
 and 8 weekly sets, in a volume on the same machine. Copying them off the machine is the operator's job (see the
 RUNBOOK); `restore.sh` puts a chosen set back.
+
+## The demonstration stack
+
+`make demo` runs the same images with `docker-compose.demo.yml` laid over the development compose file, as its own compose project
+(`smarandemo`, so it never shares a container or a volume with a development stack). The backend runs in the `demo` profile (accounts with
+a published password, which the backend refuses to create beside the `prod` profile) and loads `demo/cohort/envelopes.json` — 12
+simulated patients, 75 days each, written by the data-science simulator with a fixed seed and checked in CI to be exactly what it writes —
+through the real ingestion code, then gives the patients to the demo caregiver. The browser tests (`e2e/playwright`) run against this stack
+in CI: the showcase script, the accessibility checks and the security-header checks.
 
 ## What this deliberately is not
 

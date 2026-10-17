@@ -110,11 +110,12 @@ ds-fixture:
 	cd $(DS) && PYTHONPATH=src $(PYTHON) src/simulate.py --fixture --out ../backend/src/test/resources/cohort
 	$(PYTHON) scripts/make_sundowning_vectors.py
 
-# The stack in docker-compose.yml, then the smoke test and the browser tests against it (Phase 6). The full
-# showcase walk-through arrives in Phase 7. Needs Docker, jq, and `npm ci && npx playwright install chromium`
+# The demo stack (make demo), then the smoke test and every browser test against it: the showcase script, the
+# accessibility checks, the security headers. Needs Docker, jq, and `npm ci && npx playwright install chromium`
 # in e2e/playwright.
 e2e:
-	docker compose up --build -d --wait --wait-timeout 300
+	COMPOSE_PROJECT_NAME=smarandemo docker compose -f docker-compose.yml -f docker-compose.demo.yml up --build -d --wait --wait-timeout 600
+	bash demo/wait.sh http://localhost:8081
 	BASE_URL=http://localhost:8081 SMOKE_PASSWORD=local-smoke-password-not-a-secret deploy/smoke.sh
 	cd e2e/playwright && BASE_URL=http://localhost:8081 npx playwright test
 

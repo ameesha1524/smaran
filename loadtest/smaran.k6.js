@@ -17,6 +17,10 @@ import { check, fail } from 'k6'
 const BASE = __ENV.BASE_URL || 'http://localhost:8081'
 const TABLETS = Number(__ENV.TABLETS || 8)
 const DURATION = __ENV.DURATION || '60s'
+// How the sessions arrive. 'in-order' (the default): each is the newest the patient has, as from a tablet that is
+// online. 'late': each starts at a random time in the past, as a tablet's queue does when it was offline for a day,
+// which makes the server rebuild the patient's profile from her history every time (the expensive path).
+const ARRIVAL = __ENV.ARRIVAL || 'in-order'
 const JSON_HEADERS = { 'Content-Type': 'application/json' }
 
 export const options = {
@@ -90,8 +94,11 @@ function hex(n) {
 export function sendSession(data) {
   const t = data.tablets[Math.floor(Math.random() * data.tablets.length)]
   counter += 1
-  // Unique and in the past: a second session with the same start for the same patient is dropped as a duplicate.
-  const startedAt = new Date(Date.now() - 600000 - (__VU * 1000003 + counter * 7919) % 86400000).toISOString()
+  // Unique for the patient (a second session with the same start is dropped as a duplicate) and not in the future.
+  const startedAt =
+    ARRIVAL === 'late'
+      ? new Date(Date.now() - 600000 - ((__VU * 1000003 + counter * 7919) % 86400000)).toISOString()
+      : new Date(Date.now() - 5000).toISOString()
   const envelope = {
     clientSessionId: `${hex(8)}-${hex(4)}-4${hex(3)}-a${hex(3)}-${hex(12)}`,
     patientId: t.patientId,
