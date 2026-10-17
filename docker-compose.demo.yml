@@ -1,0 +1,21 @@
+# The demonstration stack: docker-compose.yml plus a synthetic cohort.
+#
+#   make demo          (docker compose -f docker-compose.yml -f docker-compose.demo.yml up --build -d ...)
+#
+# The backend runs in the `demo` profile (authentication on; a caregiver, a doctor and an administrator with
+# published passwords; one demo patient with a month of history) and, on top of that, loads the 12-patient
+# cohort in demo/cohort/ through the real ingestion code and gives the patients to the demo caregiver, so
+# her dashboard shows a mix of stable, declining and improving people. Loading takes about a minute and a
+# half; demo/wait.sh waits for it.
+#
+# Never use this with SMARAN_PROFILE=prod: the backend refuses the cohort loader there, and the accounts
+# have published passwords.
+services:
+  backend:
+    environment:
+      SPRING_PROFILES_ACTIVE: demo
+      SMARAN_SEED_COHORT: file:/seed/envelopes.json
+      SMARAN_SEED_OWNER_EMAIL: rupa@example.com
+      SMARAN_SEED_PER_TRAJECTORY: "0"
+    volumes:
+      - ./demo/cohort/envelopes.json:/seed/envelopes.json:ro

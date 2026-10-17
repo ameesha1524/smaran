@@ -48,6 +48,9 @@ headers=$(curl -sSI $CURL_OPTS --max-time 30 "$BASE_URL/service-worker.js") || f
 echo "$headers" | tr -d '\r' | grep -qi '^cache-control:.*no-cache' || fail "the service worker may be cached"
 echo "$headers" | tr -d '\r' | grep -qi '^content-security-policy:' || fail "no content security policy"
 code=$(http GET /actuator/prometheus); [ "$code" != 200 ] || fail "metrics are public"
+# The generated API description is for developers: it is off in production, and the proxy does not forward it.
+http GET /v3/api-docs > /dev/null || true
+if grep -q '"openapi"' "$BODY"; then fail "the API description is public"; fi
 expect "$(http GET /api/caregiver/dashboard/nobody)" 401 "the API refuses an unknown caller"
 
 say "sign in as the smoke account (registering it the first time)"

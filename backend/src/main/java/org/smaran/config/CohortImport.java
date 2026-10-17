@@ -26,6 +26,7 @@ import org.smaran.repo.ConsentRecordRepository;
 import org.smaran.repo.PatientRepository;
 import org.smaran.scoring.Contract.SessionEnvelope;
 import org.smaran.service.SessionIngestionService;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
@@ -59,6 +60,7 @@ public class CohortImport {
     private final PasswordEncoder encoder;
     private final ObjectMapper json;
     private final Clock clock;
+    private final String ownerEmail;
 
     public CohortImport(
             PatientRepository patients,
@@ -67,7 +69,11 @@ public class CohortImport {
             SessionIngestionService ingestion,
             PasswordEncoder encoder,
             ObjectMapper json,
-            Clock clock) {
+            Clock clock,
+            // Whose patients they are. The demo stack gives them to the demo caregiver, so that her dashboard
+            // shows the whole cohort; the account is made here if nobody has made it already.
+            @Value("${smaran.seed.owner-email:" + OWNER_EMAIL + "}") String ownerEmail) {
+        this.ownerEmail = ownerEmail;
         this.patients = patients;
         this.users = users;
         this.consents = consents;
@@ -75,6 +81,10 @@ public class CohortImport {
         this.encoder = encoder;
         this.json = json;
         this.clock = clock;
+    }
+
+    public String ownerEmail() {
+        return ownerEmail;
     }
 
     /** One patient as loaded: her id here, the simulator's id and the trajectory it gave her. */
@@ -180,10 +190,10 @@ public class CohortImport {
     }
 
     private AppUser owner() {
-        return users.findByEmail(OWNER_EMAIL).orElseGet(() -> {
+        return users.findByEmail(ownerEmail).orElseGet(() -> {
             AppUser u = new AppUser();
             u.setId("cohort-caregiver");
-            u.setEmail(OWNER_EMAIL);
+            u.setEmail(ownerEmail);
             u.setName("Cohort owner (synthetic)");
             u.setPasswordHash(encoder.encode("smaran"));
             u.setRole(Role.CAREGIVER);

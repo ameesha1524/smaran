@@ -47,7 +47,7 @@ export default function Register() {
           <p className="font-sans" style={{ fontSize: 17, color: 'var(--chalk)' }}>
             {waiting}
           </p>
-          <Link to="/caregiver/login" className="pill" style={{ background: 'var(--olive-continue)', color: 'var(--chalk)', textAlign: 'center' }}>
+          <Link to="/caregiver/login" className="pill" style={{ background: 'var(--olive-action)', color: 'var(--chalk)', textAlign: 'center' }}>
             Back to sign in
           </Link>
         </div>
@@ -113,7 +113,7 @@ export default function Register() {
           </p>
         )}
 
-        <button type="submit" className="pill mt-2" disabled={busy} style={{ background: 'var(--olive-continue)', color: 'var(--chalk)' }}>
+        <button type="submit" className="pill mt-2" disabled={busy} style={{ background: 'var(--olive-action)', color: 'var(--chalk)' }}>
           {busy ? 'One moment…' : 'Create account'}
         </button>
       </form>

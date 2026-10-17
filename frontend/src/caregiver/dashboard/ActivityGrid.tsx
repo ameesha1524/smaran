@@ -38,8 +38,10 @@ export default function ActivityGrid({ cells }: { cells: DashboardView['activity
           Nothing yet.
         </p>
       ) : (
-        <div role="img" aria-label={`${total} sittings in the last 90 days, by weekday and hour`} className="overflow-x-auto">
-          <div style={{ display: 'grid', gridTemplateColumns: `34px repeat(${hours.length}, minmax(14px, 1fr))`, gap: 3, minWidth: 360 }}>
+        // On a phone the grid is wider than the screen and scrolls inside this box, so the box must be reachable by
+        // keyboard (WCAG 2.1.1), and say what it is. The picture itself is described by the inner element.
+        <div role="region" aria-label="When she plays: sittings by weekday and hour. Scrolls sideways on a small screen." tabIndex={0} className="overflow-x-auto">
+          <div role="img" aria-label={`${total} sittings in the last 90 days, by weekday and hour`} style={{ display: 'grid', gridTemplateColumns: `34px repeat(${hours.length}, minmax(14px, 1fr))`, gap: 3, minWidth: 360 }}>
             <span />
             {hours.map((h) => (
               <span key={h} className="font-sans" style={{ fontSize: 10, color: 'var(--chalk-dim)', textAlign: 'center' }}>

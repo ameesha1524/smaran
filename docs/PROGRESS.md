@@ -3,7 +3,7 @@
 Read this at the start of every session, after `docs/MASTER_PROMPT.md`.
 All patient data in this repository is synthetic or demo data.
 
-Last updated: 2026-10-15 (Phase 6, PR #8 open; CI being worked through).
+Last updated: 2026-10-17 (Phase 7: PR #25 open, all CI checks green; waiting for the owner to merge).
 
 ## Phase status
 
@@ -15,17 +15,18 @@ Last updated: 2026-10-15 (Phase 6, PR #8 open; CI being worked through).
 | 3. Device pairing | **P0 and P1 done** | `phase-3-pairing` | PR #5 merged into `master` |
 | 4. Games to dashboards | **P0 done; P1 items 8, 11, 12, 13 done; 9 and 10 (upload) not** | `phase-4-games` | PR #6 merged into `master` |
 | 5. Data science | **P0 and P1 done; P2: clustering done, sentiment correlation not** | `phase-5-data-science` | Verified; see "Phase 5" below |
-| 6. DevOps | **P0 written and rehearsed locally. P1: Dependabot, SBOM (written, unrun) and branch-protection advice done; the Grafana profile and preview environments not.** Nothing has run on GitHub or on a real VM yet | `phase-6-devops` | See "Phase 6" below |
-| 7. Hardening and showcase | Not started | | |
+| 6. DevOps | **P0 done; PR #8 merged 2026-10-15.** CI ran green on GitHub and CD built and pushed the images; the deploy job is skipped until H5. P1: Dependabot, SBOM and branch-protection advice done; the Grafana profile and preview environments not | `phase-6-devops` | See "Phase 6" below |
+| 7. Hardening and showcase | **P0 done and verified locally and in CI (PR #25, all checks green); P1 done (accessibility pass, k6 load test).** Showcase steps 1 to 7 and 9 shown by running; step 8 is shown for CI and the rehearsal, **not for a real VM**. Not yet merged | `phase-7-hardening` | See "Phase 7" and its verification report below |
 
-**Next:** merge Phase 6 and read its first CI run; then Phase 7 (hardening and showcase).
+**Next:** merge the Phase 7 PR (#25; CI is green). Then the owner's steps: H5 (a VM and a domain), H9 to H12 and H15 (decisions), H16 (a screen-reader pass).
 
 ## Needs the human
 
 | # | What | Why | Until then |
 |---|---|---|---|
 | H1 | ~~Install Docker Desktop~~ | Done 2026-10-06 | none |
-| H2 | **Merge the Phase 6 PR**, after reading its CI run | Merging to `master` is the owner's call. Several CI jobs (Trivy, gitleaks, Playwright on a runner, CodeQL) had never run when the PR was opened | Phase 7 builds on it |
+| H2 | **Merge the Phase 7 PR (#25)** | Merging to `master` is the owner's call. CI is green, including the `e2e` job that now runs the showcase and accessibility tests on a runner | Phase 6 was merged 2026-10-15 |
+| H16 | **A screen-reader and real-user accessibility pass** on the family and doctor screens, ideally with people who use one every day; and the patient's own screens judged with people like her | The Phase 7 pass was axe-core (WCAG 2.1 A/AA) plus a keyboard walk. Software finds roughly a third of the problems; it cannot say whether a screen makes sense when read aloud | Nothing is known about how these screens read aloud |
 | H9 | **Decide what the family is told, and how often.** As shipped, the default alert (a "watch" or worse, two sessions in a row) fires about 22 times per stable patient-year across six domains; a "decline"-only alert, about 4 | The evaluation (`data-science/results/SUMMARY.md`) measured it on a simulated cohort. Options: show the family only "decline"; require three in a row; cap alerts per patient per month. Each trades detection for quiet | Nothing was changed. The shipped behaviour stands |
 | H10 | **Decide the sundowning guard.** At six sittings per part and an effect size of 0.8, 58% of simulated patients with no late-day dip are flagged at least once in a year | At ten sittings and 1.2 it is 8.5%, and 65% of evaluations for a patient who does have a dip | Nothing was changed |
 | H11 | **Consent for research use.** The notice in this build does not mention research or export | The dataset export is for the operator's own evaluation. Before real data is exported for any study, the notice and an ethics approval must cover it | The export works on synthetic data only in practice |
@@ -44,6 +45,12 @@ Last updated: 2026-10-15 (Phase 6, PR #8 open; CI being worked through).
 
 | Date | Decision | Reason |
 |---|---|---|
+| 2026-10-16 | The API description (springdoc, JSON only, no Swagger UI) is served to ADMIN only and is switched off in prod | The prompt allows non-prod or behind ADMIN; both hold, so a mistake in one still leaves the other |
+| 2026-10-16 | The demo stack is its own compose overlay (`docker-compose.demo.yml`, project `smarandemo`) and loads the committed 12-patient cohort (`demo/cohort/`, seed 20261016, 75 days) | The showcase must be reproducible by one command and the cohort must not change under it; CI regenerates it and diffs |
+| 2026-10-16 | The showcase is a Playwright test with three browser profiles, tablet service workers blocked | `setOffline` needs the page to own its network; the service worker would answer from cache |
+| 2026-10-16 | Action buttons use a new token, `--olive-action` (#2d7549), not the decorative olive | The decorative olive gave 3.6:1 against white text; 4.5:1 is the WCAG AA line |
+| 2026-10-16 | The Python e2e scripts (`e2e/phase2_ui_flow.py`, `phase3_pairing_flow.py`, `phase4_games_flow.py`) stay | Docs point to them and they check more (37, 34 and 44 checks) than the showcase does; they are Windows-only developer scripts, and the Playwright suite is what CI runs |
+| 2026-10-16 | No change to alert noise, the sundowning guard, consent or export (H9 to H12) | They are the owner's decisions; this phase only measured and wrote down |
 | 2026-10-06 | Renamed `docs/SMARAN_MASTER_PROMPT.md` to `docs/MASTER_PROMPT.md` | The prompt's own step 1, and the path later sessions are told to read |
 | 2026-10-06 | Committed the earlier uncommitted work as one commit (`f388fe8`) before any Phase 0 change | So it can be reviewed or reverted as a unit |
 | 2026-10-06 | Track `frontend/package-lock.json` | `npm ci` fails without it |
@@ -683,6 +690,126 @@ ci.yml, cd.yml, security.yml and dependabot.yml parse as YAML. (That check found
 - Trivy was not run locally (the container run failed on this machine); its scans run in CI. Three Spring Framework CVEs are accepted in `.trivyignore` with reasons and an expiry (H15).
 - Self-hosting the fonts and the MediaPipe model (issue 70).
 
+## Phase 7 — 2026-10-17
+
+Branch `phase-7-hardening`, from `master` after PR #8.
+
+### What was built
+
+- **The demo stack.** `make demo` (`docker-compose.demo.yml`, project `smarandemo`, PWA on :8081, backend on loopback :8080) starts PostgreSQL, the backend in the demo profile and the PWA, waits for them (`demo/wait.sh`), and loads the committed 12-patient synthetic cohort (`demo/cohort/`, seed 20261016, 75 days) through the real ingestion path, plus the demo accounts. `make demo-down`, `make demo-cohort` (regenerate), `make e2e`, `make rehearse`. The demo accounts and `demo-patient` exist only in the dev and demo profiles.
+- **The showcase as a test** (`e2e/playwright/tests/showcase.spec.ts`): steps 2 to 7 of the showcase script, three browser profiles (family, tablet, doctor), including the Lotus Frog canvas game, offline play with the browser's network cut, replay of the same batch, and the doctor's 404s for patients not shared. It is in CI.
+- **Accessibility** (`a11y.spec.ts`, axe-core 4.14.0, WCAG 2.1 A and AA): the family, doctor and administrator screens, signed out and in, the dashboard of a declining patient on a computer and at 390 px, plus a keyboard-only sign-in and tab walk.
+- **OpenAPI** (`springdoc-openapi-starter-webmvc-api` 2.8.17, JSON only, no Swagger UI): `/v3/api-docs` is ADMIN only and is off under the prod profile; the smoke test and the rehearsal check that an anonymous caller does not get it.
+- **Load test** (`loadtest/smaran.k6.js`, `loadtest/README.md`), with the numbers below.
+- **`README.md` rewritten** for the app as it is, with six screenshots of the synthetic demo (`docs/screenshots/`, `screenshots.spec.ts` retakes them), and a table that separates what is built and checked from what is designed and not.
+- **Docs:** `docs/explainers/phase-7.md`; `docs/ARCHITECTURE.md` (OpenAPI, the demo stack); `docs/RUNBOOK.md` (the API description note).
+
+### Defects found and fixed in this phase
+
+Found by running the showcase and the checks, not by reading:
+
+- **Contrast.** The action buttons were 3.6:1 against their white text and the dashboard footer 3.5:1 (4.5:1 is the line). New token `--olive-action` (#2d7549) for text-bearing buttons; the footer is less transparent.
+- **Sideways scrolling on a phone.** The week-by-hour heatmap's minimum width widened the whole dashboard grid. The grid is `grid-cols-1` with `min-w-0` children and the heatmap scrolls inside its own box.
+- **A scroll region the keyboard could not reach.** It is now focusable, with a name and a role.
+- **Rollback could leave the site down** (Phase 6's code, found when the rehearsal was re-run on the slower Spring Boot 3.5 backend): `settle()` in `deploy.sh`; health windows widened. Already on `master`.
+- **Spring printed a generated password** at start-up (already on `master`).
+- **Showcase test defects of my own**, each of which would have made a check pass or fail for the wrong reason: a locator that matched the wrong element; a glyph count that assumed nine glyphs where the game has six; a `waitForFunction` the page's CSP forbids (`unsafe-eval`), replaced by an `evaluate` polling helper; "Duck Roll Call" looked for on a page that prints the name before anyone has played; a "not shared" patient who was in fact shared (the seeder grants the doctor `demo-patient`); a `getByText('Her tablet')` that became ambiguous once the tablet's own name was listed (a race: it passed when the list had not loaded yet, and failed on the verification run; now the heading by role).
+- **Two CodeQL alerts in the load-test script** (above), found on the first CI run.
+- **README claims I could not back up**, corrected after checking the code: the API requires consent, not the guardian's name; the server re-scores only Duck Roll Call; the journal keeps the numbers and a one-line gist that no screen shows.
+- **The rehearsal's new check was wrong twice** (my own): it expected 404 where an anonymous caller gets 401 from the ADMIN rule before springdoc is reached; then `wget`'s non-zero exit on a 401 aborted the script under `set -e` without a message. It now requires a refusal and no document. That springdoc itself is off in prod is `OpenApiOffIT`'s job.
+
+### Verification report
+
+Everything below was run on the Phase 7 tree on 2026-10-17 (one machine: Windows 11, Intel i5-1135G7, Docker Desktop), unless it says CI.
+
+```
+frontend   npx tsc -b                                   clean
+           npx tsc -p tsconfig.test.json                clean
+           npm test                                     8 files, 145 tests passed
+           npm audit --omit=dev --audit-level=high      exit 0; 2 moderate advisories remain in shipped packages
+backend    mvn -o -B verify -Dsmaran.build.dir=C:/Users/amees/smaran-build
+                                                        unit: 108 run, 0 failures, 0 errors, 0 skipped
+                                                        integration (PostgreSQL 16 in Testcontainers): 440 run, 0 failures
+                                                        BUILD SUCCESS, 2 min 12 s
+                                                        includes OpenApiIT (2), OpenApiOffIT (1), the authorization matrix
+                                                        (new row: ADMIN_ONLY GET /v3/api-docs), ObservabilityTest (path sanitiser)
+data-science  python -m pytest -q                       83 passed in 39.87 s
+           PYTHONPATH=src python src/run_all.py         exit 0 in 566.8 s (what `make ds` runs; `make` is not installed here)
+                                                        git diff against the committed results/: only run_info.json
+                                                        (the stage timings). Every CSV, figure and SUMMARY.md is byte-identical.
+browser    BASE_URL=http://localhost:8081 npx playwright test   (the demo stack, `smarandemo`, up 46 h)
+                                                        15 passed, 3 skipped (the screenshot tests, which run only on request).
+                                                        Two full runs in a row: 15 passed (2.8 min) and 15 passed (3.3 min).
+                                                        showcase 7 (steps 2-7 and "no uncaught errors in any of the three pages"),
+                                                        a11y 6 (9 axe scans, 0 violations; keyboard walk), stack 2.
+                                                        The first full run had 1 failure: the ambiguous 'Her tablet' locator (above).
+deploy     deploy/rehearse.sh (REHEARSAL_DIR set, MSYS2_ARG_CONV_EXCL for the backup paths)
+                                                        1. good deploys, smoke test steps 1-8 pass; the prod backend refuses an
+                                                           anonymous /v3/api-docs                                           held
+                                                        2. same tag again: "already deployed and healthy; nothing to do"      held
+                                                        3. backend that never starts: "could not bring ... up", rolled back,
+                                                           good healthy                                                      held
+                                                        4. healthy but the API broken: "smoke FAILED at step 1: ... expected
+                                                           HTTP 401, got 503", rolled back                                   held
+                                                        5. backup, damage, restore: "restore: done", healthy                 held
+                                                        "the rehearsal held ...", exit 0.
+                                                        Two earlier runs this session failed, both my doing: I started one while
+                                                        another was running (same work folder and ports: "container name already in
+                                                        use"), and my new check aborted the script (above). The third, run alone,
+                                                        passed. The same "could not bring good up" appeared once in Phase 6 and was
+                                                        not explained; a second rehearsal running at the same time is a possible
+                                                        cause there too. That is a guess, not shown.
+```
+
+**Load test** (k6, `loadtest/README.md`; one laptop running the generator and every service, so *not* capacity figures for a deployment):
+
+| Sessions arrive | Offered | Ingest p95 | Dashboard read p95 | Failed | Verdict |
+|---|---|---|---|---|---|
+| in order | 5 / s, 60 s | 127 ms | 64 ms | 0 | passes |
+| in order | 20 / s, 30 s | 95 ms | 53 ms | 0 | passes |
+| in order | 50 / s, 30 s | 6.5 s | 1.8 s | 0 | saturated, about 25 a second completed |
+| in order | 100 / s, 30 s | 7.5 s | 4.8 s | 0 | saturated, about 20 a second completed |
+| late | 5 / s, 30 s | 1.04 s | 82 ms | 0 | fails the 800 ms ingest mark |
+
+No request failed in any run: past its limit the system got slower, it did not drop or corrupt a session. The finding: a session that arrives late costs about ten times as much, because each one rebuilds the patient's whole profile (issue 77).
+
+**The showcase script** (`docs/MASTER_PROMPT.md` section 4):
+
+| Step | Result |
+|---|---|
+| 1. `make demo` starts the stack, about 12 synthetic patients with 60+ days, demo accounts that work only in dev and demo | **Shown.** 12 cohort patients load (the caregiver sees 13 with `demo-patient`). `make` is not installed on this machine (H3), so I ran the lines the target runs; CI runs the same compose files |
+| 2. Caregiver dashboard populated | **Shown** (showcase 2, screenshots) |
+| 3. Patient with guardian consent, a code, a second browser pairs at /pair | **Shown** (showcase 3) |
+| 4. Lotus Frog and Duck Roll Call, the dashboard updates live | **Shown** (showcase 4; the Lotus Frog's readings are passed through as the tablet computed them, issue 40) |
+| 5. Offline play queued, syncs once, replay idempotent | **Shown** (showcase 5) |
+| 6. Doctor: only shared patients, read-only, 404 otherwise, no journal, family media or raw trials | **Shown** (showcase 6; the authorization matrix in the backend tests is the exhaustive version) |
+| 7. Revoke the tablet: refused and quiet | **Shown** (showcase 7) |
+| 8. CI green, deploy smoke test | **CI green: shown** for PR #25 (all 18 checks on the final commit, including `e2e` on a runner and `docker-build`, which runs the rehearsal; see "CI" below). **The deploy smoke test is shown in the rehearsal, not against a VM** (H5, H14) |
+| 9. `data-science/` reproduces its results with one command | **Shown** (above; 566.8 s, results byte-identical) |
+
+**Not run locally, run by CI:** Trivy (images and filesystem), gitleaks, CodeQL, `pip-audit`.
+
+**CI** (PR #25, commit `0088450`): all checks passed: frontend, backend, datascience, `docker-build` (both images, Trivy, then `deploy/rehearse.sh`), `e2e` (the demo stack, the showcase, a11y and stack specs, on a GitHub runner, the first time), `security` (audits, gitleaks, Trivy), CodeQL for Java, JavaScript/TypeScript and Python, and the new step that regenerates the demo cohort and diffs it against `demo/cohort/`. The first run was not clean: **CodeQL found two alerts (`js/insecure-randomness`) in `loadtest/smaran.k6.js`**, `Math.random()` used for the session id and for choosing which tablet sends. Nothing there needs randomness. The id now comes from `k6/crypto` and tablets and readers are chosen round-robin; the script was re-run against the demo stack (no failed requests, every check passed) and both alerts cleared.
+
+### Done-when, checked
+
+| Criterion | Result |
+|---|---|
+| The whole showcase script runs, and what fails is fixed; a Playwright test automates steps 2 to 7 | **Yes** (the defects above, all fixed). In CI on every change; its first run on a runner was this PR, and it passed |
+| `README.md` rewritten | **Yes** |
+| OpenAPI via springdoc, non-prod or ADMIN only | **Yes**: ADMIN only, and off in prod; tested both ways |
+| A verification report in `PROGRESS.md` | **Yes** (above) |
+| P1: accessibility pass on the caregiver and doctor screens | **Yes, with limits:** automated and keyboard only (H16) |
+| P1: k6 load test with honest numbers | **Yes**, with limits above |
+
+### Not done in Phase 7
+
+- **A screen-reader pass, and a pass on the patient's own screens** (H16).
+- **Self-hosting the fonts and the MediaPipe model** (issue 70), which the README's "needs internet on first use" still states.
+- **Batching the profile rebuild for late sessions** (issue 77): measured, not changed.
+- **The media half of a restore** (issue 66), anything on a real VM or domain, and the alert, sundowning, consent and export decisions (H9 to H12): none touched.
+- The Python e2e scripts were kept (decisions table), not removed.
+
 ## Known issues
 
 Found during recon. Each is scheduled in `docs/PLAN.md`.
@@ -788,6 +915,16 @@ Found during recon. Each is scheduled in `docs/PLAN.md`.
 74. **The smoke account and patient stay in the production database** (named so, one synthetic session per deploy). They appear in an administrator's user list and the audit log.
 75. **Reminder pushes and caregiver SMS are still stubs** (`TODO(pilot)` in `NotificationService`); they now log only ids.
 76. **The proxies limit only the request body size** (25 MB); the per-endpoint limits are the application's.
+
+## Found in Phase 7
+
+77. **A session that arrives late makes the server rebuild the patient's whole profile, once per session.** About ten times the cost of an in-order session (p95 1.04 s at 5 a second on a long history, against 127 ms), and it grows with her history. A tablet back from days offline sends a batch of them. Rebuilding once per batch would remove most of it. Not changed (a design decision, not a hardening fix).
+78. **The load numbers are one laptop running everything,** with no limits on any container. They say where the code bends, not what a VM with the prod compose limits will do. **Live dashboard streams (server-sent events) were not part of the load test:** how many simultaneous viewers one backend holds open is not measured.
+79. **Accessibility was checked by software and a keyboard walk,** on the family, doctor and administrator screens. No screen reader; the patient's own screens were not in scope (H16).
+80. **The three Python e2e scripts are Windows-only developer scripts** that CI does not run. The showcase, a11y and stack specs are what CI runs; the scripts remain for their finer checks.
+81. **The showcase and the load test need the demo profile** (demo accounts, `demo-patient`, a database they may write into). They refuse to mean anything against production; `deploy/smoke.sh` is the production check.
+82. **Showcase test locators that match text (`getByText`) can be ambiguous** when the same words are a heading and a list item. One such race was found and fixed (`Her tablet`); two other uses of the same locator are before any tablet exists and cannot hit it.
+83. **A rehearsal started while another is running fails with container-name conflicts** (the work folder and the ports are shared). Run one at a time; the script does not guard against it.
 
 ## Files left untracked on purpose
 

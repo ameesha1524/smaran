@@ -5,6 +5,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.context.annotation.Profile;
+import org.springframework.core.annotation.Order;
 import org.springframework.core.io.ResourceLoader;
 import org.springframework.stereotype.Component;
 
@@ -19,6 +20,8 @@ import org.springframework.stereotype.Component;
  * (written by {@code python data-science/src/simulate.py}). Off unless asked for, and never with the
  * prod profile: it creates an account with a published password.
  */
+// After DemoDataSeeder (Order 1), so that when the cohort is given to the demo caregiver her account exists.
+@Order(2)
 @Component
 @Profile("!prod")
 @ConditionalOnExpression("'${smaran.seed.cohort:}' != ''")
@@ -46,6 +49,6 @@ public class CohortLoader implements CommandLineRunner {
         log.info("loading the synthetic cohort from {} ({} patients per trajectory)", location, perTrajectory == 0 ? "all" : perTrajectory);
         CohortImport.Summary s = importer.load(resources.getResource(location), perTrajectory);
         log.info("synthetic cohort loaded: {} patients, {} sessions, dates shifted {} days. Sign in as {} / smaran",
-                s.patients().size(), s.sessionsAccepted(), s.shiftDays(), CohortImport.OWNER_EMAIL);
+                s.patients().size(), s.sessionsAccepted(), s.shiftDays(), importer.ownerEmail());
     }
 }

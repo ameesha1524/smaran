@@ -142,7 +142,7 @@ export default function AccessPanel({ patientId }: { patientId: string }) {
             <option value={365}>1 year</option>
           </select>
         </label>
-        <button type="submit" className="pill" disabled={busy} style={{ background: 'var(--olive-continue)', color: 'var(--chalk)', padding: '8px 22px', fontSize: 16 }}>
+        <button type="submit" className="pill" disabled={busy} style={{ background: 'var(--olive-action)', color: 'var(--chalk)', padding: '8px 22px', fontSize: 16 }}>
           Share
         </button>
       </form>

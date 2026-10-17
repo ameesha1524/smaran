@@ -6,7 +6,7 @@
 #   docker-build both images, scanned (Trivy), then a REHEARSAL of the deploy: a good release, a release that
 #                never starts and a release whose API is broken, each of which must be rolled back
 #   security     secrets (gitleaks), dependency audits (npm, pip) and a Trivy scan of the repository
-#   e2e          the compose stack, a real browser (Playwright), and the smoke test
+#   e2e          the demo stack with its cohort, real browsers (Playwright): the showcase script, and the smoke test
 #
 # security.yml adds CodeQL and a weekly re-run of the audits; cd.yml deploys what passes here.
 name: ci
@@ -107,6 +107,11 @@ jobs:
         run: |
           PYTHONPATH=src python src/simulate.py --fixture --out /tmp/fixture
           diff -r /tmp/fixture ../backend/src/test/resources/cohort
+      - name: The committed demo cohort (12 patients, 75 days) is what the simulator writes
+        run: |
+          PYTHONPATH=src python src/simulate.py --out /tmp/demo-cohort --n 12 --days 75 --seed 20261016 --no-latent
+          diff /tmp/demo-cohort/envelopes.json ../demo/cohort/envelopes.json
+          diff /tmp/demo-cohort/params.json ../demo/cohort/params.json
       - name: A small-N run of the simulation and every analysis
         env:
           SMARAN_DS_SMALL: "1"
@@ -213,8 +218,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
-      - name: Bring the stack up (the database, the backend in the demo profile, the PWA behind nginx)
-        run: docker compose up --build -d --wait --wait-timeout 300
+      # The same stack `make demo` starts: the backend in the demo profile with the 12-patient synthetic cohort
+      # loaded through the real ingestion code. demo/wait.sh waits for the cohort, which loads after "healthy".
+      - name: Bring the demo stack up (database, backend with the cohort, the PWA behind nginx)
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.demo.yml up --build -d --wait --wait-timeout 600
+          bash demo/wait.sh http://localhost:8081
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -230,6 +239,8 @@ jobs:
           BASE_URL: http://localhost:8081
           SMOKE_PASSWORD: ci-smoke-password-not-a-secret
         run: deploy/smoke.sh
+      # stack.spec.ts: headers, CSP, what is exposed. showcase.spec.ts: the showcase script, steps 2 to 7, with
+      # three browser profiles (a family, a tablet, a doctor).
       - name: The browser tests
         working-directory: e2e/playwright
         env:
@@ -244,4 +255,4 @@ jobs:
             e2e/playwright/test-results
       - name: Logs, if it failed
         if: failure()
-        run: docker compose logs --tail 150
+        run: docker compose -f docker-compose.yml -f docker-compose.demo.yml logs --tail 150

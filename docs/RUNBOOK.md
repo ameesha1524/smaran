@@ -229,6 +229,10 @@ $C logs --since 1h backend | grep '"level":"ERROR"'
 
 The application does not log passwords, tokens, pairing codes or request bodies (a pairing code is logged by its row id); log lines that name a person carry ids, not names. That comes from reading every log statement, not from a test, so a new log line is a thing to review.
 
+**The API description.** Off in production on purpose (and nginx does not forward `/v3/api-docs`). To read it, run the demo stack
+(`make demo`), sign in as `admin@example.com`, and fetch `http://localhost:8080/v3/api-docs` with the bearer token (the backend's own port
+is published on the loopback address only). `docs/rbac-architecture.md` says who may call what.
+
 **Metrics.** `/actuator/prometheus` needs an ADMIN sign-in, so it is not on the public internet for anyone. A
 scrape needs a bearer token for an admin account. Counters worth watching:
 

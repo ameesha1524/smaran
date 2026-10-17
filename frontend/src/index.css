@@ -15,6 +15,9 @@
   --olive: #3a5228;
   --olive-light: #5a7840;
   --olive-continue: #3a8a5a;
+  /* The action colour on the caregiver, doctor and administrator screens: chalk text on it is 4.77:1 (WCAG AA
+     needs 4.5:1; --olive-continue is 3.6:1). The patient-facing screens keep --olive-continue. */
+  --olive-action: #2d7549;
   --chalk: #f0ede0;
   --chalk-dim: #b8b49e;
   --lotus-white: #ddeaf8;

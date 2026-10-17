@@ -109,7 +109,7 @@ export default function CreatePatient() {
           type="submit"
           className="pill mt-2"
           disabled={busy || !consent || !name.trim()}
-          style={{ background: 'var(--olive-continue)', color: 'var(--chalk)', opacity: consent && name.trim() ? 1 : 0.5 }}
+          style={{ background: 'var(--olive-action)', color: 'var(--chalk)', opacity: consent && name.trim() ? 1 : 0.5 }}
         >
           {busy ? 'One moment…' : 'Add her'}
         </button>
