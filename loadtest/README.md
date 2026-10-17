@@ -24,6 +24,9 @@ Settings (environment variables): `RATE` sessions a second (5), `DURATION` (60s)
   the patient has, as from a tablet that is online. `late`: each starts at a random time in the past, as the queue of a
   tablet that was offline does; the server then rebuilds that patient's profile from her whole history for every session.
 
+Run it twice and read the second: the first run after a stack has sat idle for hours is slow while the JVM and the connection
+pool warm up (a 15-second run at 5 a second gave an ingest 95th percentile of 2.3 s; the runs after it, 97 ms).
+
 The pass marks are generous on purpose (no more than 1% failed requests; dashboard 95th percentile under 1.5 s; ingest
 95th percentile under 800 ms).
 

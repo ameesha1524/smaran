@@ -13,6 +13,7 @@
 
 import http from 'k6/http'
 import { check, fail } from 'k6'
+import { randomBytes } from 'k6/crypto'
 
 const BASE = __ENV.BASE_URL || 'http://localhost:8081'
 const TABLETS = Number(__ENV.TABLETS || 8)
@@ -85,10 +86,11 @@ export function readDashboard(data) {
 }
 
 let counter = 0
+// A session id only has to be new, but it is made from the crypto source so nothing here looks like a guessable id.
 function hex(n) {
   let s = ''
-  for (let i = 0; i < n; i++) s += Math.floor(Math.random() * 16).toString(16)
-  return s
+  for (const b of new Uint8Array(randomBytes(Math.ceil(n / 2)))) s += b.toString(16).padStart(2, '0')
+  return s.slice(0, n)
 }
 
 export function sendSession(data) {
