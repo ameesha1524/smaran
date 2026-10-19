@@ -6,7 +6,7 @@
 # forwards /api to the backend, so the browser sees one origin and CORS never
 # comes into it. The image runs as an unprivileged user on port 8080.
 
-FROM node:22-alpine AS build
+FROM node:26-alpine AS build
 WORKDIR /build
 
 COPY package.json package-lock.json ./
