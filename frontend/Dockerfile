@@ -17,7 +17,7 @@ RUN npm run build
 
 # The stable line, not an old one: an old base carries old OpenSSL, libexpat and libxml2, and Trivy fails the build
 # on those. `apk upgrade` takes the fixes the base image has not rebuilt for yet.
-FROM nginxinc/nginx-unprivileged:1.30-alpine
+FROM nginxinc/nginx-unprivileged:1.31-alpine
 USER root
 RUN apk upgrade --no-cache
 USER 101
