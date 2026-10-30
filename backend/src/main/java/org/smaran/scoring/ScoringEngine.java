@@ -150,6 +150,9 @@ public final class ScoringEngine {
             case SINGLE -> velocity <= config.declineVelocity()
                     ? AlertSeverity.DECLINE
                     : velocity <= config.watchVelocity() ? AlertSeverity.WATCH : null;
+            case THREE_CONSECUTIVE -> state.runDecline() >= 3
+                    ? AlertSeverity.DECLINE
+                    : state.runWatch() >= 3 ? AlertSeverity.WATCH : null;
             case TWO_CONSECUTIVE -> state.runDecline() >= 2
                     ? AlertSeverity.DECLINE
                     : state.runWatch() >= 2 ? AlertSeverity.WATCH : null;

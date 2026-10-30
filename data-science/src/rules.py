@@ -2,7 +2,8 @@
 
   R0  absolute level: the EMA level is at or below a fixed cut-off
   R1  single-session velocity: this session is far enough under her own usual
-  R2  two-consecutive velocity: this and the previous session both are (the product default)
+  R2  two-consecutive velocity: this and the previous session both are (the product default until 2026-10-31)
+  R4  three-consecutive velocity: this and the two before it all are (the product default)
   R3  CUSUM: the lower CUSUM of velocity has crossed a threshold
 
 Each rule is written here as an *alarm score* per contribution (higher = more alarming), so a
@@ -33,12 +34,13 @@ import pandas as pd
 import scoring_core as sc
 from replay import SequenceIndex, previous_in_sequence
 
-RULES = ("R0", "R1", "R2", "R3")
+RULES = ("R0", "R1", "R2", "R3", "R4")
 RULE_NAMES = {
     "R0": "Absolute level",
     "R1": "Single-session velocity",
     "R2": "Two-consecutive velocity",
     "R3": "CUSUM",
+    "R4": "Three-consecutive velocity",
 }
 EPISODE_GAP_DAYS = 7
 WINDOWS = (14, 30, 60, 90)
@@ -51,12 +53,14 @@ DEFAULT_THRESHOLD = {
     "R1": 0.8,    # velocity <= -0.8, the engine's watch threshold
     "R2": 0.8,
     "R3": 2.0,    # CUSUM >= h / 2, the engine's watch level
+    "R4": 0.8,
 }
 SWEEP = {
     "R0": np.linspace(-72.0, -8.0, 33),
     "R1": np.linspace(0.2, 4.0, 40),
     "R2": np.linspace(0.2, 4.0, 40),
     "R3": np.linspace(0.5, 14.0, 45),
+    "R4": np.linspace(0.2, 4.0, 40),
 }
 NEG_INF = -np.inf
 
@@ -76,6 +80,13 @@ def alarm_scores(frame: pd.DataFrame, index: SequenceIndex, rule: str) -> np.nda
         eligible = eligible & prev_ok
     elif rule == "R3":
         s = frame.cusum.to_numpy().copy()
+    elif rule == "R4":
+        prev_v = previous_in_sequence(v, index, np.nan)
+        prev2_v = previous_in_sequence(prev_v, index, np.nan)
+        prev_ok = previous_in_sequence(eligible.astype(float), index, 0.0) > 0
+        prev2_ok = previous_in_sequence(prev_ok.astype(float), index, 0.0) > 0
+        s = -np.maximum(np.maximum(v, prev_v), prev2_v)  # all three must be under the threshold
+        eligible = eligible & prev_ok & prev2_ok
     else:
         raise ValueError(rule)
     return np.where(eligible & np.isfinite(s), s, NEG_INF)

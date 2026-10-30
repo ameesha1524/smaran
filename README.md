@@ -111,9 +111,10 @@ fast), and asks how well the alert rules and the scoring behave. **Every result 
 listed with its reason in [`data-science/README.md`](data-science/README.md); none is estimated from patients. The numbers below
 are from [`data-science/results/SUMMARY.md`](data-science/results/SUMMARY.md), and `make ds` reproduces them.
 
-- **The alerts as shipped are noisy.** A "watch or worse" alert on two sessions in a row fires about **22 times per stable patient-year** and
-  finds 73% of real declines within 90 days. A "decline"-only alert cuts the false alarms to about 4 a year and finds 35%.
-  Whether a family should be told that often is a decision, not a technicality.
+- **Alerts trade quiet for speed, and the default was changed for that reason.** An alert on two low sessions in a row fired about
+  **22 times per stable patient-year** and found 73% of real declines within 90 days. The default is now **three in a row**: about
+  **5 false alarms a year**, finding 44% of declines within 90 days, with a median delay of 80 days instead of 44. A family
+  told every two to three weeks that something may be wrong stops listening; this was the owner's decision, made on these numbers.
 - **At the same false-alarm budget, CUSUM is the best rule**: 26% of declines within 90 days at one false alarm a year, against 7 to 9% for the others.
 - **One session is a poor measure; an average of several is a good one.** Test and retest agreement is 0.67 for a single session, 0.95 for the mean of seven.
 - **Practice hides decline.** A true fall of 1.7 points a month looks like 0.1 if practice effects are ignored and 1.5 if they are modelled.

@@ -34,7 +34,7 @@ public record ScoringConfig(
         double cusumH) {
 
     public static final ScoringConfig DEFAULT = new ScoringConfig(
-            0.25, 50, 30, 3, 5, 12, 3, 12, 0.35, -1.5, -0.8, 1.0, AlertRule.TWO_CONSECUTIVE, 0.5, 4);
+            0.25, 50, 30, 3, 5, 12, 3, 12, 0.35, -1.5, -0.8, 1.0, AlertRule.THREE_CONSECUTIVE, 0.5, 4);
 
     public ScoringConfig withAlertRule(AlertRule rule, double k, double h) {
         return new ScoringConfig(

@@ -148,7 +148,9 @@ export function statusFor(velocity: number, config: ScoringConfig = DEFAULT_CONF
  * Should this contribution raise an alert, under the configured rule?
  *
  *   SINGLE           the status of this one contribution
- *   TWO_CONSECUTIVE  two in a row at or below the threshold (the default)
+ *   THREE_CONSECUTIVE  three in a row at or below the threshold (the default since 2026-10-31:
+ *                      about 5 false alarms per stable patient-year in the simulation, against 22 for two)
+ *   TWO_CONSECUTIVE    two in a row at or below the threshold
  *   CUSUM            the lower CUSUM of velocity has crossed h (decline) or h / 2 (watch)
  *
  * Called only for gated-in contributions; `state` is the state after this one.
@@ -158,6 +160,10 @@ export function alertFor(state: TargetState, velocity: number, config: ScoringCo
     case 'SINGLE':
       if (velocity <= config.declineVelocity) return 'decline'
       if (velocity <= config.watchVelocity) return 'watch'
+      return null
+    case 'THREE_CONSECUTIVE':
+      if (state.runDecline >= 3) return 'decline'
+      if (state.runWatch >= 3) return 'watch'
       return null
     case 'TWO_CONSECUTIVE':
       if (state.runDecline >= 2) return 'decline'

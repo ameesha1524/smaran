@@ -379,8 +379,10 @@ class IngestionIT extends ApiTest {
         assertEquals(0, open(p).size(), "a steady patient raises nothing");
 
         feed(p, 80, 20);
-        assertEquals(0, open(p).size(), "one low session is a bad day (two in a row is the rule)");
+        assertEquals(0, open(p).size(), "one low session is a bad day");
         feed(p, 70, 20);
+        assertEquals(0, open(p).size(), "two in a row are not enough either (three is the rule)");
+        feed(p, 65, 20);
         List<Alert> raised = open(p);
         assertEquals(1, raised.size());
         assertEquals("DOMAIN_DECLINE", raised.get(0).getKind());
@@ -412,7 +414,7 @@ class IngestionIT extends ApiTest {
         AppUser doctor = newUser(Role.DOCTOR);
         Patient p = newPatient(owner);
         grantTo(p, doctor, owner, 30);
-        feed(p, 100, 70, 70, 70, 70, 70, 70, 20, 20);
+        feed(p, 100, 70, 70, 70, 70, 70, 70, 20, 20, 20);
         Alert a = open(p).get(0);
 
         assertEquals(403, status(post("/api/patients/" + p.getId() + "/alerts/" + a.getId() + "/acknowledge"), tokenFor(doctor)));

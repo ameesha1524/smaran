@@ -109,7 +109,7 @@ export interface GameModule {
 export const STATUSES = ['stable', 'watch', 'decline', 'improving'] as const
 export type Status = (typeof STATUSES)[number]
 
-export const ALERT_RULES = ['TWO_CONSECUTIVE', 'SINGLE', 'CUSUM'] as const
+export const ALERT_RULES = ['THREE_CONSECUTIVE', 'TWO_CONSECUTIVE', 'SINGLE', 'CUSUM'] as const
 export type AlertRule = (typeof ALERT_RULES)[number]
 
 export type AlertSeverity = 'watch' | 'decline'
@@ -188,7 +188,7 @@ export const DEFAULT_CONFIG: ScoringConfig = {
   declineVelocity: -1.5,
   watchVelocity: -0.8,
   improvingVelocity: 1.0,
-  alertRule: 'TWO_CONSECUTIVE',
+  alertRule: 'THREE_CONSECUTIVE',
   cusumK: 0.5,
   cusumH: 4,
 }

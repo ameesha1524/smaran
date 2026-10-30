@@ -164,15 +164,18 @@ decline, 30 improving; about 77,000 sessions and 150,000 scores.
 
 ### 1. Alert rules (Appendix C): `rules_*.csv`, `rules_froc.png`, `rules_roc_pr.png`, `rules_delay_cdf.png`
 
-Four rules, each with and without the confidence gate, judged against the known onset day of each decline. As shipped
+Five rules, each with and without the confidence gate, judged against the known onset day of each decline. As shipped
 (an alert at "watch" or worse, the confidence gate on):
 
 | Rule | Detected within 30 days | within 90 days | Median delay (days) | Points she had lost | False alarms per stable patient-year |
 |---|---|---|---|---|---|
 | R0 Absolute level (level at or below 40) | 7% (4 to 11) | 20% (13 to 28) | 100 | 16.5 | 5.8 (3.6 to 8.5) |
 | R1 Single-session velocity | 75% (69 to 81) | 93% (88 to 97) | 11 | 1.1 | 70.6 (66.3 to 75.3) |
-| R2 Two-consecutive velocity (the default) | 35% (30 to 41) | 73% (68 to 80) | 44 | 4.8 | 22.2 (19.8 to 25.1) |
+| R2 Two-consecutive velocity (the default until 2026-10-31) | 35% (30 to 41) | 73% (68 to 80) | 44 | 4.8 | 22.2 (19.8 to 25.1) |
 | R3 CUSUM | 37% (31 to 43) | 76% (69 to 82) | 42 | 4.6 | 22.5 (20.5 to 24.8) |
+| R4 Three-consecutive velocity (the default) | 11% (7 to 16) | 44% (37 to 53) | 80 | 9.4 | 5.2 (4.5 to 6.0) |
+
+R4 was added on 2026-10-31, when the owner chose it as the shipped rule (decision H9). It is the quietest velocity rule as shipped. At the same false-alarm budget it catches more than R2 (19% against 9% within 90 days at one false alarm a year) and less than CUSUM (26%).
 
 What the data says, including where it disagrees with what was expected:
 

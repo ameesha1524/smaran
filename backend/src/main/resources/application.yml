@@ -99,10 +99,11 @@ smaran:
     model: ${SMARAN_JOURNAL_MODEL:claude-haiku-4-5-20251001}
 
   scoring:
-    # Which rule turns low readings into an alert: TWO_CONSECUTIVE (default),
-    # SINGLE or CUSUM. Status on the dashboard is unaffected; see
+    # Which rule turns low readings into an alert: THREE_CONSECUTIVE (default since
+    # 2026-10-31; about 5 false alarms per stable patient-year in the simulation,
+    # against 22 for TWO_CONSECUTIVE), TWO_CONSECUTIVE, SINGLE or CUSUM. Status on the dashboard is unaffected; see
     # org.smaran.scoring.ScoringEngine#alertFor.
-    alert-rule: ${SMARAN_ALERT_RULE:TWO_CONSECUTIVE}
+    alert-rule: ${SMARAN_ALERT_RULE:THREE_CONSECUTIVE}
     # CUSUM only. k is the slack in SD units; h is the threshold (decline at
     # h, watch at h / 2).
     cusum-k: 0.5

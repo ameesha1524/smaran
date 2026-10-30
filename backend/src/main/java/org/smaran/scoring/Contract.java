@@ -71,7 +71,7 @@ public final class Contract {
     }
 
     public enum AlertRule {
-        TWO_CONSECUTIVE, SINGLE, CUSUM
+        THREE_CONSECUTIVE, TWO_CONSECUTIVE, SINGLE, CUSUM
     }
 
     /** What one session says about one domain or sub-signal. */

@@ -11,3 +11,6 @@ R2,Two-consecutive velocity,highest third,27,71.7482,19.9644,16.4502,23.0198
 R3,CUSUM,lowest third,26,40.4975,23.5441,19.3957,27.4964
 R3,CUSUM,middle third,27,57.6333,22.5149,19.0715,26.3734
 R3,CUSUM,highest third,27,71.7482,21.4272,17.532,24.7405
+R4,Three-consecutive velocity,lowest third,26,40.4975,5.6885,4.0423,7.275
+R4,Three-consecutive velocity,middle third,27,57.6333,5.5352,4.2688,6.7938
+R4,Three-consecutive velocity,highest third,27,71.7482,4.3882,3.3192,5.4694

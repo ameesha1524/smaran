@@ -18,7 +18,7 @@ Last updated: 2026-10-17 (Phase 7: PR #25 open, all CI checks green; waiting for
 | 6. DevOps | **P0 done; PR #8 merged 2026-10-15.** CI ran green on GitHub and CD built and pushed the images; the deploy job is skipped until H5. P1: Dependabot, SBOM and branch-protection advice done; the Grafana profile and preview environments not | `phase-6-devops` | See "Phase 6" below |
 | 7. Hardening and showcase | **P0 done and verified locally and in CI (PR #25, all checks green); P1 done (accessibility pass, k6 load test).** Showcase steps 1 to 7 and 9 shown by running; step 8 is shown for CI and the rehearsal, **not for a real VM**. Not yet merged | `phase-7-hardening` | See "Phase 7" and its verification report below |
 
-**Next:** merge the Phase 7 PR (#25; CI is green). Then the owner's steps: H5 (a VM and a domain), H9 to H12 and H15 (decisions), H16 (a screen-reader pass).
+**Next:** Phase 7 is merged (#25). The alert rule is now three in a row (H9). Open: H10 (sundowning guard), H5 (a VM and a domain), H16. Then the owner's steps: H5 (a VM and a domain), H9 to H12 and H15 (decisions), H16 (a screen-reader pass).
 
 ## Needs the human
 
@@ -27,7 +27,7 @@ Last updated: 2026-10-17 (Phase 7: PR #25 open, all CI checks green; waiting for
 | H1 | ~~Install Docker Desktop~~ | Done 2026-10-06 | none |
 | H2 | **Merge the Phase 7 PR (#25)** | Merging to `master` is the owner's call. CI is green, including the `e2e` job that now runs the showcase and accessibility tests on a runner | Phase 6 was merged 2026-10-15 |
 | H16 | **A screen-reader and real-user accessibility pass** on the family and doctor screens, ideally with people who use one every day; and the patient's own screens judged with people like her | The Phase 7 pass was axe-core (WCAG 2.1 A/AA) plus a keyboard walk. Software finds roughly a third of the problems; it cannot say whether a screen makes sense when read aloud | Nothing is known about how these screens read aloud |
-| H9 | **Decide what the family is told, and how often.** As shipped, the default alert (a "watch" or worse, two sessions in a row) fires about 22 times per stable patient-year across six domains; a "decline"-only alert, about 4 | The evaluation (`data-science/results/SUMMARY.md`) measured it on a simulated cohort. Options: show the family only "decline"; require three in a row; cap alerts per patient per month. Each trades detection for quiet | Nothing was changed. The shipped behaviour stands |
+| H9 | ~~Decide what the family is told, and how often~~ | **Decided 2026-10-31: three sessions in a row** (`THREE_CONSECUTIVE`, now the default). In the simulation it raises about 5.2 false alarms per stable patient-year (was 22.2 for two in a row) and catches 44% of declines within 90 days (was 73%), with a median delay of about 80 days (was 44) | The old rules stay selectable (`SMARAN_ALERT_RULE`) |
 | H10 | **Decide the sundowning guard.** At six sittings per part and an effect size of 0.8, 58% of simulated patients with no late-day dip are flagged at least once in a year | At ten sittings and 1.2 it is 8.5%, and 65% of evaluations for a patient who does have a dip | Nothing was changed |
 | H11 | **Consent for research use.** The notice in this build does not mention research or export | The dataset export is for the operator's own evaluation. Before real data is exported for any study, the notice and an ethics approval must cover it | The export works on synthetic data only in practice |
 | H12 | Set `SMARAN_EXPORT_SALT` for any deployment that will use the export | It keys the hash that stands for a patient. It defaults to the signing secret; rotating that changes every hash | None needed for development |
@@ -45,6 +45,7 @@ Last updated: 2026-10-17 (Phase 7: PR #25 open, all CI checks green; waiting for
 
 | Date | Decision | Reason |
 |---|---|---|
+| 2026-10-31 | **H9 decided by the owner: an alert needs three low sessions in a row** (`THREE_CONSECUTIVE`, the new default in all three engines; `TWO_CONSECUTIVE`, `SINGLE` and `CUSUM` stay selectable). This departs from `MASTER_PROMPT.md`, which specifies two | Measured before it was made the default (`rules.py` R4): 5.2 false alarms per stable patient-year (4.5 to 6.0) instead of 22.2, at the cost of catching 44% of declines within 90 days (37 to 53) instead of 73%, and a median delay of about 80 days instead of 44. At a similar noise level it catches more than "decline only, two in a row" (35%, 4.1 false alarms) |
 | 2026-10-16 | The API description (springdoc, JSON only, no Swagger UI) is served to ADMIN only and is switched off in prod | The prompt allows non-prod or behind ADMIN; both hold, so a mistake in one still leaves the other |
 | 2026-10-16 | The demo stack is its own compose overlay (`docker-compose.demo.yml`, project `smarandemo`) and loads the committed 12-patient cohort (`demo/cohort/`, seed 20261016, 75 days) | The showcase must be reproducible by one command and the cohort must not change under it; CI regenerates it and diffs |
 | 2026-10-16 | The showcase is a Playwright test with three browser profiles, tablet service workers blocked | `setOffline` needs the page to own its network; the service worker would answer from cache |
@@ -887,7 +888,7 @@ Found during recon. Each is scheduled in `docs/PLAN.md`.
 
 ## Found in Phase 5
 
-52. **The shipped alert fires often.** Under the simulation's assumptions about 22 false alarms per stable patient-year for "watch or worse" (two in a row), 4 for "decline" only, 71 for a single session. `AlertService` opens an alert for "watch" as well as "decline", so a family would see them. Unchanged; decision H9.
+52. **The shipped alert fires often.** Under the simulation's assumptions about 22 false alarms per stable patient-year for "watch or worse" (two in a row), 4 for "decline" only, 71 for a single session. `AlertService` opens an alert for "watch" as well as "decline", so a family would see them. **Decided 2026-10-31 (H9): three in a row is now the default, about 5.2 false alarms per stable patient-year, detecting 44% of declines within 90 days.**
 53. **The shipped sundowning guard flags many people with no dip, over a year** (58% at least once). Unchanged; decision H10.
 54. **Every result is conditional on assumed parameters.** No parameter is estimated from patients; the bootstrap intervals describe sampling, not the assumptions. Thirteen one-at-a-time changes are in `sensitivity.csv`.
 55. **The alert rules look at confidence only through the gate and alpha.** A session she leaves part-way counts at full weight toward an alert (only the displayed level is damped). Dropping such sessions changes little; filtering on confidence trades alarms for sensitivity. Not changed.
