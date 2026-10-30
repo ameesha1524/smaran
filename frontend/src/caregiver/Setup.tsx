@@ -71,7 +71,7 @@ export default function Setup() {
               style={{
                 padding: '10px 20px',
                 fontSize: 16,
-                background: 'var(--olive-continue)',
+                background: 'var(--olive-action)',
                 border: '1px solid rgba(221,234,248,0.16)',
               }}
             >
@@ -90,7 +90,7 @@ export default function Setup() {
               style={{
                 padding: '8px 20px',
                 fontSize: 16,
-                background: tab === t.key ? 'var(--olive-continue)' : 'rgba(11,23,40,0.7)',
+                background: tab === t.key ? 'var(--olive-action)' : 'rgba(11,23,40,0.7)',
                 border: '1px solid rgba(221,234,248,0.16)',
                 minHeight: 44,
               }}
@@ -172,7 +172,7 @@ function PatientTab({
                 padding: '8px 18px',
                 fontSize: 16,
                 minHeight: 44,
-                background: form.languageCode === code ? 'var(--olive-continue)' : 'rgba(8,15,30,0.7)',
+                background: form.languageCode === code ? 'var(--olive-action)' : 'rgba(8,15,30,0.7)',
                 border: '1px solid rgba(221,234,248,0.18)',
               }}
             >
@@ -225,7 +225,7 @@ function PatientTab({
                 padding: '8px 18px',
                 fontSize: 16,
                 minHeight: 44,
-                background: form.peakWindow === w ? 'var(--olive-continue)' : 'rgba(8,15,30,0.7)',
+                background: form.peakWindow === w ? 'var(--olive-action)' : 'rgba(8,15,30,0.7)',
                 border: '1px solid rgba(221,234,248,0.18)',
               }}
             >
@@ -242,7 +242,7 @@ function PatientTab({
         </label>
       </Field>
 
-      <button type="button" onClick={save} className="pill self-start" style={{ background: 'var(--olive-continue)', color: 'var(--chalk)' }}>
+      <button type="button" onClick={save} className="pill self-start" style={{ background: 'var(--olive-action)', color: 'var(--chalk)' }}>
         Save
       </button>
     </section>
@@ -325,7 +325,7 @@ function FamilyTab({ patientId, flash }: { patientId: string; flash(msg: string)
 
         <VoiceRecorder onRecorded={setVoice} recorded={voice} />
 
-        <button type="button" onClick={() => void add()} className="pill self-start" style={{ background: 'var(--olive-continue)', color: 'var(--chalk)' }}>
+        <button type="button" onClick={() => void add()} className="pill self-start" style={{ background: 'var(--olive-action)', color: 'var(--chalk)' }}>
           Add to the grove
         </button>
       </div>
@@ -481,7 +481,7 @@ function ObjectsTab({ patientId, flash }: { patientId: string; flash(msg: string
         <button type="button" onClick={add} className="pill stone" style={{ padding: '10px 22px', fontSize: 16 }}>
           Add object
         </button>
-        <button type="button" onClick={() => void save()} className="pill" style={{ background: 'var(--olive-continue)', color: 'var(--chalk)', padding: '10px 22px', fontSize: 16 }}>
+        <button type="button" onClick={() => void save()} className="pill" style={{ background: 'var(--olive-action)', color: 'var(--chalk)', padding: '10px 22px', fontSize: 16 }}>
           Save library
         </button>
       </div>
@@ -580,7 +580,7 @@ function RemindersTab({ patientId, flash }: { patientId: string; flash(msg: stri
             Add {t.toLowerCase()}
           </button>
         ))}
-        <button type="button" onClick={() => void save()} className="pill" style={{ background: 'var(--olive-continue)', color: 'var(--chalk)', padding: '10px 20px', fontSize: 16 }}>
+        <button type="button" onClick={() => void save()} className="pill" style={{ background: 'var(--olive-action)', color: 'var(--chalk)', padding: '10px 20px', fontSize: 16 }}>
           Save
         </button>
         <button
@@ -634,7 +634,7 @@ function CultureTab({
           flash('Saved.')
         }}
         className="pill self-start"
-        style={{ background: 'var(--olive-continue)', color: 'var(--chalk)' }}
+        style={{ background: 'var(--olive-action)', color: 'var(--chalk)' }}
       >
         Save
       </button>

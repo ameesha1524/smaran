@@ -92,7 +92,7 @@ export default function TrendChart({
               style={{
                 padding: '6px 16px',
                 fontSize: 15,
-                background: days === r ? 'var(--olive-continue)' : 'rgba(11,23,40,0.7)',
+                background: days === r ? 'var(--olive-action)' : 'rgba(11,23,40,0.7)',
                 border: '1px solid rgba(221,234,248,0.16)',
               }}
             >

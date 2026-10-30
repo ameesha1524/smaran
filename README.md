@@ -2,218 +2,189 @@
 
 *Sanskrit: to remember.*
 
-A dementia care companion for elderly patients in North East India. Not a
-brain-training app — a living digital sanctuary: a twilight pond at the edge of
-a bamboo forest, a sleepy moon, koi drifting under lotus leaves, and a voice
-that greets her in her own language using the word her family calls her by.
+A companion for people living with dementia, and a quiet dashboard for the family and the clinician around them. The
+person plays a few calm, culturally rooted games on a tablet, in a pond at the edge of a bamboo forest, and never sees a
+score. Behind the pond, what she does is turned into readings of six cognitive domains, which her family and her doctor
+can follow over time and be told about when something seems to be changing.
 
-Clinically-shaped cognitive stimulation is wrapped in enough warmth that the
-patient never feels assessed. The AI watches quietly — hesitation, mood, voice
-texture, rhythm — and reshapes the experience around what she has kept.
+> **Read this first.** Smaran is a research prototype. Every patient in this repository is **synthetic**. It is **not a
+> medical device**, it has **not been clinically validated**, and nothing in it diagnoses anything. The data-science
+> results describe how the software behaves on a simulated world, not how people with dementia behave.
 
----
+<p align="center">
+  <img src="docs/screenshots/tablet-pond.png" alt="The patient's tablet: a twilight pond with koi, lotus leaves and bamboo" width="48%">
+  <img src="docs/screenshots/family-dashboard-phone.png" alt="The family's dashboard on a phone: domain trends, status and alerts" width="22%">
+</p>
 
-## Running it
+| The family's dashboard | The doctor's read-only view |
+|---|---|
+| ![A family dashboard for a patient whose scores are falling](docs/screenshots/family-dashboard.png) | ![The doctor's view of a shared patient](docs/screenshots/doctor-view.png) |
 
-### Development
+| Pairing a tablet with a code | A game (Duck Roll Call) |
+|---|---|
+| ![The tablet's pairing screen](docs/screenshots/tablet-pairing.png) | ![Duck Roll Call on the tablet](docs/screenshots/tablet-game.png) |
 
-Node 20+, a JDK 21 and Maven. The backend needs PostgreSQL 16, which it can
-get in either of two ways.
-
-```bash
-# backend, with Docker
-docker compose up -d db
-cd backend
-mvn spring-boot:run -Dspring-boot.run.profiles=dev      # → :8080
-
-# backend, with no Docker: starts its own PostgreSQL 16 as a child process
-cd backend
-mvn spring-boot:test-run -Dspring-boot.run.main-class=org.smaran.LocalDevApplication
-
-# frontend
-cd frontend
-npm ci
-npm run dev                                             # → :5173
-```
-
-Both seed synthetic demo data and, in the `dev` profile, leave the API open.
-Sign in at `/caregiver/login`. The `dev` and `demo` profiles seed three demo
-accounts, all with the password `smaran`: `rupa@example.com` (family),
-`meera.das@example.com` (a doctor, with Anima's record shared) and
-`admin@example.com` (administrator). They exist in no other profile.
-All data in this repository is synthetic.
-
-**Pairing a tablet** (the patient's side). Sign in as the family, open the
-dashboard, and under **Her tablet** press *Get a pairing code*. It looks like
-`HJ4K-2M`, works once and lasts three days. On the tablet (a second browser
-profile works), open the app: it asks for the code at `/pair`. Once paired it
-opens her pond, and the family sees the tablet listed, with *Remove* beside it.
-Removing it ends its access on its next request and deletes none of her data.
-`python e2e/phase3_pairing_flow.py` drives this end to end (header explains the
-set-up).
-
-**Games to dashboards.** Every game sends what happened, round by round; the tablet scores it
-with the game's own module and says why in plain words; the server checks it, stores it, works
-out where she stands against her own usual, raises alerts, and updates an open dashboard within
-a second or two. `python e2e/phase4_games_flow.py` plays Duck Roll Call on the tablet's real
-screen and watches the family's dashboard follow, then plays offline and reconnects. To add a
-game: `docs/ADDING_A_GAME.md`. To have journal entries read for how they feel, set
-`ANTHROPIC_API_KEY` for the backend; without it they are simply not read, and her words are
-never stored either way.
-
-**The data-science layer** (`data-science/`, start with its `README.md`). A simulator makes a cohort whose
-ground truth is known, a Python port of the scoring engine (held to `golden-vectors.json`) replays it, and the alert
-rules are compared by how soon they catch a real decline and how often they cry wolf. `pip install -r
-data-science/requirements.txt`, then `make ds` writes every table and figure to `data-science/results/` (about
-ten minutes; `make ds-small` is the two-minute version CI runs). The cohort goes through the real ingestion
-service, so a demo dashboard can show it:
-
-```bash
-cd data-science && PYTHONPATH=src python src/simulate.py --out out/cohort        # envelopes.json and the rest
-cd ../backend && mvn spring-boot:test-run -Dspring-boot.run.main-class=org.smaran.LocalDevApplication     -Dspring-boot.run.arguments="--smaran.seed.cohort=file:../data-science/out/cohort/envelopes.json --smaran.seed.per-trajectory=1"
-```
-
-Sign in as `cohort@example.com` / `smaran`. An administrator can download the de-identified dataset
-(`GET /api/admin/export/sessions.csv`); `make ds-export` proves the evaluation code runs on what that returns.
-
-Tests: `npm test` in `frontend/`, `mvn verify` in `backend/`, `python -m pytest` in `data-science/`.
-
-Once paired, the PWA runs with **no backend at all**: every read falls back to
-the device cache, and every write queues in IndexedDB. That is not a demo
-affordance — it is the same path a tablet takes in a village with no signal for
-three days. Pairing is the one thing that needs the server, once.
-
-### The full stack
-
-```bash
-docker compose up --build       # PWA :8081 · API :8080, demo profile
-```
-
-### Production
-
-One VM, Docker Compose, Caddy for HTTPS, images from GHCR. A merge to `master` that passes CI is built, published, deployed,
-smoke-tested over the public address, and put back if the smoke test fails. Every variable is in `.env.example`.
-
-- [`docs/RUNBOOK.md`](docs/RUNBOOK.md): set up the machine, deploy, roll back, rotate a secret, restore a backup, add a doctor or a game.
-- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md): what runs where, and the path from a merge to a running release.
-- `make rehearse` runs the deploy, rollback, backup and restore on this machine; `make e2e` runs the browser tests.
-
+All pictures are of the demo stack (`make demo`), with synthetic people.
 
 ---
 
-## What is here
+## Run it
 
-```
-frontend/                      React 18 · Vite · TypeScript · Tailwind · PWA
-  src/scenes/Sanctuary.tsx     the whole pond, hand-coded SVG
-  src/scenes/sanctuary.css     five breeze cycles, koi, breathing, grain
-  src/screens/Home.tsx         greeting · lotus-bud languages · voice stone
-  src/screens/Onboarding.tsx   "The Arriving Guest" — five silent measurements
-  src/games/                   Weaver's Loom · Grandmother's Tale ·
-                               Family Grove · Morning Rituals
-  src/caregiver/               setup, dashboard, login
-  src/lib/                     api · db (IndexedDB) · speechEngine · ambient ·
-                               audioCapture · affect · gardenEngine ·
-                               cognitiveProfile · federated
-  src/service-worker.ts        offline caching + reminders with zero signal
-  src/i18n/strings.ts          greetings, kinship terms, cultural registers
+You need Docker and `make` (on Windows without `make`, run the one `docker compose` line in the `Makefile` under `demo:`).
 
-backend/                       Spring Boot 3 · Java 21 · JPA · WebFlux · JWT
-  domain/ repo/ service/ web/  entities, repositories, the rules, the API
+```bash
+git clone https://github.com/ameesha1524/smaran.git && cd smaran
+make demo            # builds the images (several minutes the first time), starts the stack, loads the synthetic cohort
+# open http://localhost:8081     sign in as rupa@example.com / smaran
 ```
 
-## The parts worth knowing about
+That is the whole product on your machine: PostgreSQL, the API, the web app behind nginx, and a caregiver with 13
+synthetic patients (60 to 75 days of history each: some stable, some declining, some improving). A doctor
+(`meera.das@example.com`) and an administrator (`admin@example.com`) use the same password, `smaran`. These accounts
+exist only in the `dev` and `demo` profiles; the backend refuses to start with them in production.
 
-**The illustration is the interface.** `Sanctuary.tsx` is one SVG: radial sky
-and chalk stars, folk-art hills through a `feTurbulence` roughen filter, three
-depth layers of bamboo per side swaying from the root, banana leaves, grasses
-with scroll motifs at the waterline, the pond, lily pads with the triangular
-notch cut, three koi that turn to face where they are swimming, a sleeping woman
-breathing on a 5.5 s cycle, and a fractal-noise grain overlay that makes the
-whole thing read as gouache. No raster asset anywhere. Five breeze cycles run at
-staggered offsets so nothing ever moves in lockstep, everything is
-`ease-in-out`, and `prefers-reduced-motion` stops the pond rather than degrading
-it.
+To play the tablet, open a **second browser profile** at `http://localhost:8081`, mint a code on a patient's page ("Her
+tablet", "Get a pairing code"), and type it on the tablet's `/pair` screen. `make demo-down` stops everything and deletes its data.
 
-**Nothing is a rectangle.** The greeting is chalk against the sky. The languages
-are six lotus buds at the water's edge that bloom when chosen. The voice button
-is a river stone with a leaf on it. The caregiver link is a quiet underline in
-the corner.
+Other commands (the top of the `Makefile` lists them all): `make verify` (every test), `make e2e` (the browser
+tests against the demo stack), `make ds` (the data-science results, about ten minutes), `make rehearse` (a deployment,
+a rollback, a backup and a restore, on this machine).
 
-**The garden replaces every score.** `gardenEngine.ts` and `GardenStateService`
-are deliberate duplicates of each other so a tablet offline for a week blooms
-identically to the server. Growth only ever increases — there is no decrement in
-either file. A missed day sets `restingPhase`, which is moonlight sleep, not a
-penalty; the patient is never told, and the caregiver is told once, after three
-consecutive days.
+---
 
-**Adaptation is silent.** `useAdaptiveSession` runs behind all four games. It
-watches tap latency against her *own* baseline, adds face-mesh geometry when a
-camera is available and permitted (brow furrow, eye openness — never a frame
-leaves the device), and subscribes to the server's SSE stream. Two consecutive
-readings above her behaviourally-derived anxiety threshold ease all three
-difficulty axes at once and shift the ambient tone 528 → 432 Hz. She is never
-shown a notification, a change, or a failure screen.
+## How it fits together
 
-**The profile is built by watching.** Onboarding measures language latency,
-semantic recognition, motor rhythm, mood and self-reported peak — as five warm
-interactions, not a questionnaire. Every session amends the profile with a 3:1
-weighting toward history, so one bad afternoon never rewrites a person.
+```mermaid
+flowchart LR
+  T["Tablet (PWA)<br/>works offline: IndexedDB queue,<br/>service worker"] -- "HTTPS, paired device token" --> N
+  F["Family, doctor, administrator<br/>(browser)"] -- "HTTPS, signed-in token" --> N
+  subgraph Server["One machine, Docker Compose"]
+    N["nginx<br/>app + /api proxy"] --> B["Spring Boot API<br/>RBAC per patient, scoring,<br/>alerts, live updates (SSE)"]
+    B --> D[("PostgreSQL")]
+  end
+  B -. "optional" .-> A["Model API<br/>(journal reading)"]
+```
 
-**Offline is the default case.** Service Worker pre-caches the scene, the games
-and the language strings; medicine reminders fire from the device's own clock
-with a 45-minute grace window; sessions queue in IndexedDB and sync on
-reconnect, deduplicated by `(patientId, startedAt)` with the server record
-winning. Garden state is *recomputed* from deduplicated history rather than
-accumulated, so a replayed queue cannot inflate it.
+A game ends on the tablet in a **session**: the raw rounds, a reading for each domain it touched, and the reason for it.
+The tablet queues sessions on the device and sends them when it can. The server checks them (it re-scores the games it
+can from the raw rounds and says so on the session), keeps one record of each (a replayed batch changes nothing), updates
+the patient's profile and tells open dashboards at once. The same scoring rules exist in TypeScript, Java and Python,
+held to one file of shared test vectors, so the three cannot drift apart unnoticed.
 
-**Voice never leaves the device.** `audioCapture.ts` computes five scalars
-(jitter, shimmer, mean pause, speech rate, phonation ratio) in memory and
-discards the waveform. There is no audio column in `AcousticVector` and no
-`MediaRecorder` in that file. A rising jitter *and* shimmer trend over 30 days
-produces exactly one sentence — "Possible early vocal fatigue pattern —
-recommend clinical review" — whose wording is fixed in code, because the
-distinction between a monitoring signal and a diagnosis is the whole clinical
-position.
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) has the deployment picture and the path from a merge to a running release;
+[`docs/rbac-architecture.md`](docs/rbac-architecture.md) says who may see what, and `AuthorizationMatrixIT` holds it as a table of
+329 cases; [`docs/RUNBOOK.md`](docs/RUNBOOK.md) is how to run it.
 
-**Family Grove advances per person.** She may recall her daughter unprompted and
-still need a cousin's name on screen. Three fluent recognitions advance that one
-relationship; a miss drops it immediately, which is errorless learning working
-rather than a punishment. A correct answer notifies that family member and asks
-them to record a new five-second voice note — which is what she hears next time.
+---
 
-## Things that are deliberately not finished
+## What is built, and what is only designed
 
-Stated plainly so nobody mistakes scaffolding for a feature:
+**Built** means it runs, and a test or a recorded run shows it. **Designed** means there is a design or a shape in the code and
+it should not be mistaken for a working feature.
 
-- **The NER-language phrasing is unreviewed.** Assamese, Manipuri, Mizo and
-  Nagamese greetings are the brief's best attempt, marked `reviewed: false` in
-  `i18n/strings.ts` and in `LanguageService`, and the caregiver setup screen
-  warns about it. Replace them with a native speaker's phrasing before a pilot.
-- **Federated learning is a working shape, not a working protocol.** The device
-  trains a logistic-regression head locally (plain TypeScript, ~60 lines, rather
-  than a 3 MB TensorFlow.js dependency on a rural tablet — the exchange is
-  identical and the swap point is marked), encrypts the gradient delta with
-  AES-GCM and posts it. The server stores a hash as a receipt and drops the
-  payload. Real key agreement or secure aggregation is the first task of an FL
-  pilot; `FederatedAggregationService` says so at the top.
-- **Zero-knowledge proof audit logs are not implemented.** Phase 2 in the brief,
-  and nothing here pretends otherwise.
-- **FCM and Twilio are behind `NotificationService`** and log instead of
-  sending until keys are configured. The family WebSocket is real and works.
-- **S3 is a local directory** behind the same key-based interface
-  (`StorageService`). Two methods to swap.
-- **PDF export is OpenPDF**, not JasperReports; the intended `.jrxml` lives in
-  `backend/src/main/resources/reports/` with the field list.
-- **All demo content is fictional placeholder.** The therapeutic claim rests
-  entirely on the content being *this patient's* — her family's faces, her
-  family's voices, her objects. Generic content measures nothing.
+| | Status | What that means |
+|---|---|---|
+| The tablet app: pond, six games, six languages, offline queue | **Built** | The games are Duck Roll Call, Koi Are Jumping, The Lotus Frog, Grandmother's Tale, Family Grove and Morning Rituals. Sessions queue offline and sync once (showcase test, step 5). The five non-English languages are the project brief's best attempt and are **unreviewed** by a native speaker (marked `reviewed: false` in the code) |
+| Pairing a tablet with a code; removing it | **Built** | A code works once and lasts three days; a removed tablet is refused and goes quiet without alarming her |
+| Server-side access control | **Built** | Family, caregiver, doctor, administrator and device principals; per-patient checks on every request; "404, never 403" for a patient you may not see |
+| One scoring engine | **Built** | Six domains, confidence-weighted, in TypeScript, Java and Python, against shared vectors |
+| The family and doctor dashboards | **Built** | Domain trends and status, clinician markers, alerts, recent sessions with their reasons, an activity map, live updates; a read-only doctor view of the patients who shared with her |
+| Alert rules and a sundowning check | **Built** | Measured on simulated patients (below). The shipped alerting is noisy: see the results |
+| The data-science layer | **Built** | A simulator with known ground truth, four alert rules evaluated against it, sensitivity and reliability analyses |
+| Containers, CI, CD, backups, observability | **Built, rehearsed on one machine, never run on a real server** | See "Deployment" |
+| The journal's reading of how she feels | **Built, optional** | Needs a model API key; without one the entry is saved on her tablet and nothing is read |
+| The research data export | **Built** | Administrator only, de-identified (not anonymous), for synthetic data in practice: the consent notice does not yet cover research use |
+| Voice markers, face-geometry adaptation | **Code exists, not covered by the end-to-end test** | On the tablet and in the dashboard's voice panel; not exercised in the showcase |
+| Family photographs and voice notes | **Designed** | Storage and the tablet's side exist; the screen on which a family uploads them does not |
+| Federated learning | **Designed** | The tablet trains and encrypts an update with a key only it holds, so the server cannot average it: it is the shape of the protocol, not the protocol |
+| Medicine reminders and caregiver SMS | **Designed** | `NotificationService` logs identifiers and sends nothing until a push and an SMS provider are configured |
+| Zero-knowledge audit logs | **Not started** | The audit log is an ordinary table |
+| A deployment on a public address | **Not done** | Needs a server, a domain and secrets; `docs/RUNBOOK.md` is the checklist |
+| Clinical validation of anything | **Not done, and not claimed** | |
 
-## Verified
+---
 
-`npm run build` and `tsc -b` are clean; `mvn test` passes; the backend boots on
-the dev profile and seeds a month of history. Endpoints exercised end-to-end:
-login, game routing, garden state, session submit (including a replay correctly
-reported as a duplicate), family members, caregiver dashboard, and the PDF
-report. The pond itself has not been reviewed on a screen by a human — look at
-it before showing it to anyone, and say what to change.
+## What the data science found
+
+`data-science/` simulates a year of play for hundreds of patients, with the truth known (who really declines, from when and how
+fast), and asks how well the alert rules and the scoring behave. **Every result depends on the simulation's assumptions**, each
+listed with its reason in [`data-science/README.md`](data-science/README.md); none is estimated from patients. The numbers below
+are from [`data-science/results/SUMMARY.md`](data-science/results/SUMMARY.md), and `make ds` reproduces them.
+
+- **The alerts as shipped are noisy.** A "watch or worse" alert on two sessions in a row fires about **22 times per stable patient-year** and
+  finds 73% of real declines within 90 days. A "decline"-only alert cuts the false alarms to about 4 a year and finds 35%.
+  Whether a family should be told that often is a decision, not a technicality.
+- **At the same false-alarm budget, CUSUM is the best rule**: 26% of declines within 90 days at one false alarm a year, against 7 to 9% for the others.
+- **One session is a poor measure; an average of several is a good one.** Test and retest agreement is 0.67 for a single session, 0.95 for the mean of seven.
+- **Practice hides decline.** A true fall of 1.7 points a month looks like 0.1 if practice effects are ignored and 1.5 if they are modelled.
+- **The sundowning check cries wolf**: at its shipped settings, about 58% of simulated patients with no late-day dip are flagged at least once in a year.
+- **Federated learning does not pay at this size**: it matches centralised training (AUC 0.69 against 0.70) and loses to a model each patient trains on her own history (0.78).
+
+---
+
+## Is it tested?
+
+The showcase script in `docs/MASTER_PROMPT.md` (section 4) is run by Playwright in three browser profiles: a family, a tablet and a doctor.
+It signs in, adds a patient with guardian consent, pairs a tablet, plays Duck Roll Call and the Lotus Frog, goes offline and back, checks
+that a doctor sees only the patients shared with her, and revokes the tablet. The full record of every command run and what it printed is
+the **verification report** in [`docs/PROGRESS.md`](docs/PROGRESS.md). In short, at the time of writing: 108 backend unit tests and 440 integration tests on PostgreSQL
+(including the 329-case authorization matrix), 145 frontend tests, 83 data-science tests, the browser suite, an accessibility check
+(axe-core, WCAG 2.1 A and AA) of the family, doctor and administrator screens, and a deployment rehearsal; and a load test with its numbers and limits in [`loadtest/README.md`](loadtest/README.md).
+
+What these do **not** show: that anything works on a real server, that the accessibility is good enough (automated checks find
+about a third of the problems, and no one has used the screens with a screen reader), or anything about real patients.
+
+---
+
+## Deployment
+
+Pushing to `master` runs CI and, when it passes, builds and publishes both images; a protected `production` environment then deploys over SSH,
+checks health and a real smoke test (sign in, pair, send a session, read it back), and **puts the previous release back automatically if either fails**.
+A deliberately broken release (one that never starts, and one that is healthy but cannot do its job) is rolled back by `make rehearse`, which CI runs on every change.
+
+**There is no public deployment yet**, so there is no URL. The deploy job stays off until someone provides a server, a domain and the secrets
+(`docs/RUNBOOK.md`, "The machine, one time"; items H5 and H14 in `docs/PROGRESS.md`). Rollback restores the code, not the database: backups are nightly and before every deploy, and `docs/RUNBOOK.md` says how to restore one.
+
+---
+
+## Known limitations
+
+The full list, with numbers, is in `docs/PROGRESS.md`. The ones that matter most:
+
+- **Everything is synthetic, and the science is simulated.** There is no clinical validation, and the cohort's assumptions are the project's own.
+- **The server re-scores only Duck Roll Call** from its raw rounds. For the other games it checks that the readings are in range and plausible, so a tablet that lies inside the allowed range is not caught; each session says how it was checked.
+- **No game measures inhibition or trajectory precision**, so those two clinician markers always read "not measured yet".
+- **The five non-English languages are unreviewed.** They must be reviewed by native speakers before any pilot.
+- **Late sessions are expensive**: a session that arrives out of order makes the server rebuild the profile; a tablet back online after days sends many (`loadtest/README.md`).
+- **The tablet loads fonts and the vision model from public CDNs the first time**, so a first run needs internet; after that the service worker holds them.
+- **The accessibility work is automated plus keyboard checks**, not a review with disabled users, and covers the family, doctor and administrator screens (the patient's screens are a different design problem).
+- **Backups are on the same machine as the data** unless the operator copies them off.
+- **Three Spring Framework CVEs are accepted** in `.trivyignore`, with reasons and an expiry (they need features the app does not use; the fix is a move to Spring Boot 4).
+
+---
+
+## Ethics and privacy
+
+- **Guardian consent is recorded, not assumed.** The server refuses to add a patient without the guardian's consent; the form asks for the guardian's name and a box that is not pre-ticked, and the consent is stored with the version of the notice, who gave it and when. A person living with dementia may not be able to consent for herself; the guardian's consent and her own assent are different things, and only the first is recorded.
+- **Data minimisation.** What leaves the tablet is a session: scores, the raw rounds of a game, and the reasons. By design in the code, her voice is reduced to a few numbers on the device and the sound is discarded, and no raw audio or video of her is kept. The journal's words go to a model provider, for one request, only if a key is configured; the server keeps numbers and a one-line summary that no screen shows, not her words.
+- **Her words and her family are the family's.** Doctors see trends and readings, not the journal, family members' names, family media or raw rounds; the authorization matrix and the showcase test check this.
+- **She is never shown a score, a timer, a streak or a failure.** An error is logged silently.
+- **Logs carry identifiers, not names**, and never passwords, tokens or pairing codes.
+- **Designed to align with India's Digital Personal Data Protection Act, 2023** (notice and consent, purpose limitation, data minimisation, a guardian's consent for a person who cannot give her own). That is a design intent, not a legal review, and it has not been audited.
+- **The consent notice does not yet cover research use**, so the data export is for synthetic data until the notice and an ethics approval cover it.
+- **Not a medical device.** A low reading is a reason to talk to a clinician, never a diagnosis; the one sentence the software says about voice is fixed in the code for that reason.
+
+---
+
+## Repository map
+
+```
+frontend/        React 18, Vite, TypeScript, PWA: the tablet, and the family, doctor and administrator screens
+backend/         Spring Boot 3.5, Java 21, PostgreSQL, Flyway: the API, scoring, access control, alerts
+data-science/    Python: the simulator, the alert-rule evaluation, the results
+demo/            The synthetic cohort and the script that waits for it to load
+deploy/          The production compose file, Caddy, deploy / rollback / backup / restore scripts, the rehearsal
+e2e/playwright/  Browser tests: the showcase, accessibility, the security headers
+loadtest/        The k6 script and its numbers
+docs/            Architecture, the runbook, access control, the plan, the progress log and its verification report, an explainer per phase
+```

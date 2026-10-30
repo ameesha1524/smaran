@@ -155,7 +155,7 @@ export default function Dashboard() {
               {readOnly ? 'No patient has been shared with you yet.' : 'You have not added anyone yet.'}
             </p>
             {!readOnly && (
-              <Link to="/caregiver/patients/new" className="pill" style={{ background: 'var(--olive-continue)', color: 'var(--chalk)' }}>
+              <Link to="/caregiver/patients/new" className="pill" style={{ background: 'var(--olive-action)', color: 'var(--chalk)' }}>
                 Add the person you care for
               </Link>
             )}
@@ -230,7 +230,7 @@ export default function Dashboard() {
               onClick={() => void openReport()}
               disabled={reportBusy}
               className="pill"
-              style={{ background: 'var(--olive-continue)', color: 'var(--chalk)', padding: '10px 22px', fontSize: 17 }}
+              style={{ background: 'var(--olive-action)', color: 'var(--chalk)', padding: '10px 22px', fontSize: 17 }}
             >
               {reportBusy ? 'One moment…' : 'PDF for the doctor'}
             </button>
@@ -283,7 +283,8 @@ export default function Dashboard() {
         <MarkersPanel markers={data.markers} />
         <DomainCards cards={data.subSignals} title="What the games measure along the way" />
 
-        <div className="grid gap-5 lg:grid-cols-2">
+        {/* grid-cols-1 and min-w-0: a cell may shrink below its widest content (the heatmap scrolls inside itself), or one wide panel makes every panel wider than a phone. */}
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-2 [&>*]:min-w-0">
           <SessionTable patientId={data.patient.id} labels={labels} refreshKey={tick} />
 
           <ActivityGrid cells={data.activity} />
@@ -356,7 +357,7 @@ export default function Dashboard() {
           )}
         </div>
 
-        <footer className="pb-8 pt-2 font-sans" style={{ fontSize: 13, color: 'var(--chalk-dim)', opacity: 0.55 }}>
+        <footer className="pb-8 pt-2 font-sans" style={{ fontSize: 13, color: 'var(--chalk-dim)', opacity: 0.75 }}>
           Smaran shows trends, not diagnoses. Anything flagged here is a prompt for a conversation with a clinician.
         </footer>
       </div>

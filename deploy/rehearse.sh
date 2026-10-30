@@ -79,6 +79,14 @@ say "1. the good release deploys, and its smoke test passes"
 ./deploy.sh good
 [ "$(cat state/current_tag)" = good ] || die "current_tag is not good"
 health || die "not healthy after the first deploy"
+# The API description (springdoc) is for administrators and is switched off by the prod profile. Asked directly, without
+# going through the proxy, an anonymous caller must be refused (a 401 from the security rule, which answers before springdoc
+# is reached) and never get the document. That springdoc itself is off in prod is checked by OpenApiOffIT, which can sign
+# in as an administrator; this script has none.
+docs_out="$("${COMPOSE[@]}" exec -T backend sh -c 'wget -S -qO- http://localhost:8080/v3/api-docs 2>&1' | tr -d '\r' || true)"
+case "$docs_out" in *'"openapi"'*) die "the prod backend serves the API description to an anonymous caller" ;; esac
+docs_status="$(printf '%s\n' "$docs_out" | head -1)"
+case "$docs_status" in *401*|*403*|*404*) ;; *) die "the prod backend did not refuse the API description: $docs_status" ;; esac
 
 say "2. the same tag again does nothing"
 ./deploy.sh good | tee /tmp/second.log

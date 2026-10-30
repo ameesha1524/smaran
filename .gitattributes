@@ -5,3 +5,5 @@ Dockerfile text eol=lf
 Caddyfile text eol=lf
 golden-vectors.json text eol=lf
 *.sql text eol=lf
+demo/cohort/* text eol=lf
+demo/*.sh text eol=lf

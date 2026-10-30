@@ -17,7 +17,8 @@
 #   make e2e           the compose stack, the smoke test, the Playwright browser tests
 #   make rehearse      deploy, rollback, backup and restore, rehearsed on this machine (Docker)
 #
-# `demo` is declared here so the name is stable, and fails loudly until the phase that builds it lands.
+#   make demo          the full stack with a synthetic cohort and demo accounts, at http://localhost:8081
+#   make demo-down     stop it and delete its data
 #
 # On Windows without make, run the commands under each target by hand, or
 # install make (`winget install GnuWin32.Make`).
@@ -27,7 +28,7 @@ NPM ?= npm
 
 .PHONY: baseline test verify frontend-install frontend-check frontend-test frontend-build
 .PHONY: backend-test backend-verify db dev-backend dev-backend-nodocker dev-frontend golden
-.PHONY: demo ds ds-small ds-test ds-export ds-fixture e2e rehearse
+.PHONY: demo demo-down demo-cohort ds ds-small ds-test ds-export ds-fixture e2e rehearse
 
 PYTHON ?= python
 DS = data-science
@@ -73,8 +74,22 @@ dev-backend-nodocker:
 dev-frontend:
 	cd frontend && $(NPM) run dev
 
+# The whole stack with a synthetic cohort, ready to look at: Postgres, the backend (demo profile), the PWA on
+# http://localhost:8081, a caregiver with 13 patients, a doctor and an administrator. Needs Docker. The first
+# start builds both images (several minutes) and loads the cohort (about a minute and a half). It runs as its own
+# compose project (smarandemo), so it never shares containers or volumes with a development stack; it does need
+# ports 8080 and 8081, so stop a development stack first.
 demo:
-	@echo "make demo is not built yet: it needs the synthetic cohort and the full stack (Phases 5, 6)." && exit 1
+	COMPOSE_PROJECT_NAME=smarandemo docker compose -f docker-compose.yml -f docker-compose.demo.yml up --build -d --wait --wait-timeout 600
+	bash demo/wait.sh http://localhost:8081
+
+demo-down:
+	COMPOSE_PROJECT_NAME=smarandemo docker compose -f docker-compose.yml -f docker-compose.demo.yml down -v
+
+# Rewrite the committed demo cohort (demo/cohort). Fixed seed; CI checks the committed files are what this writes.
+demo-cohort:
+	cd $(DS) && PYTHONPATH=src $(PYTHON) src/simulate.py --out out/demo-cohort --n 12 --days 75 --seed 20261016 --no-latent
+	cp $(DS)/out/demo-cohort/envelopes.json $(DS)/out/demo-cohort/params.json demo/cohort/
 
 # Needs: pip install -r data-science/requirements.txt. Fixed seeds; results/ is rewritten.
 ds-test:
@@ -95,11 +110,12 @@ ds-fixture:
 	cd $(DS) && PYTHONPATH=src $(PYTHON) src/simulate.py --fixture --out ../backend/src/test/resources/cohort
 	$(PYTHON) scripts/make_sundowning_vectors.py
 
-# The stack in docker-compose.yml, then the smoke test and the browser tests against it (Phase 6). The full
-# showcase walk-through arrives in Phase 7. Needs Docker, jq, and `npm ci && npx playwright install chromium`
+# The demo stack (make demo), then the smoke test and every browser test against it: the showcase script, the
+# accessibility checks, the security headers. Needs Docker, jq, and `npm ci && npx playwright install chromium`
 # in e2e/playwright.
 e2e:
-	docker compose up --build -d --wait --wait-timeout 300
+	COMPOSE_PROJECT_NAME=smarandemo docker compose -f docker-compose.yml -f docker-compose.demo.yml up --build -d --wait --wait-timeout 600
+	bash demo/wait.sh http://localhost:8081
 	BASE_URL=http://localhost:8081 SMOKE_PASSWORD=local-smoke-password-not-a-secret deploy/smoke.sh
 	cd e2e/playwright && BASE_URL=http://localhost:8081 npx playwright test
 

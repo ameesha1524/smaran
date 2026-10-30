@@ -171,6 +171,7 @@ class AuthorizationMatrixIT extends ApiTest {
         e.add(new Endpoint("ADMIN_ONLY", HttpMethod.GET, "/api/admin/audit", null));
         e.add(new Endpoint("ADMIN_ONLY", HttpMethod.GET, "/api/admin/export/sessions.csv", null));
         e.add(new Endpoint("ADMIN_ONLY", HttpMethod.GET, "/actuator/prometheus", null));
+        e.add(new Endpoint("ADMIN_ONLY", HttpMethod.GET, "/v3/api-docs", null));
         e.add(new Endpoint("DOCTOR_ONLY", HttpMethod.GET, "/api/doctor/patients", null));
         e.add(new Endpoint("PERSON_ONLY", HttpMethod.GET, "/api/auth/me", null));
         return e;

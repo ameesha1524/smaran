@@ -255,6 +255,11 @@ spring:
       - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
       - org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration
 
+# The API description is for developers: not served in production (and nginx does not forward it).
+springdoc:
+  api-docs:
+    enabled: false
+
 smaran:
   security:
     jwt-secret: ${SMARAN_JWT_SECRET:}

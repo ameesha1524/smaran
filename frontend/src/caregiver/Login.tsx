@@ -66,7 +66,7 @@ export default function Login() {
           </p>
         )}
 
-        <button type="submit" className="pill mt-2" disabled={busy} style={{ background: 'var(--olive-continue)', color: 'var(--chalk)' }}>
+        <button type="submit" className="pill mt-2" disabled={busy} style={{ background: 'var(--olive-action)', color: 'var(--chalk)' }}>
           {busy ? 'One moment…' : 'Sign in'}
         </button>
       </form>
