@@ -26,7 +26,7 @@ FIGURES = RESULTS / "figures"
 OUT = ROOT / "out"
 N_BOOT = int(os.environ.get("SMARAN_DS_BOOT", "1000"))
 
-COLORS = {"R0": "#8c6d46", "R1": "#c4572d", "R2": "#2f6f73", "R3": "#5a4e9c"}
+COLORS = {"R0": "#8c6d46", "R1": "#c4572d", "R2": "#2f6f73", "R3": "#5a4e9c", "R4": "#6a9a3a"}
 PALETTE = ["#2f6f73", "#c4572d", "#5a4e9c", "#8c6d46", "#6a9a3a", "#aa3a63"]
 
 

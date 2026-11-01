@@ -17,7 +17,7 @@ For each contribution on a domain or sub-signal, in `startedAt` order:
                 <= -1.5 decline, <= -0.8 watch, >= 1.0 improving, else stable
 
 "Prior" means before this contribution: a raw is never compared with a mean
-that already contains it. The alert rules (SINGLE, TWO_CONSECUTIVE, CUSUM) are
+that already contains it. The alert rules (SINGLE, TWO_CONSECUTIVE, THREE_CONSECUTIVE, CUSUM) are
 answered by `alert_for`, and every rule's bookkeeping is kept on every step, so
 the rule can be switched without replaying history.
 
@@ -44,7 +44,7 @@ SUB_SIGNAL_IDS = (
     "SUSTAINED_ATTENTION",
 )
 TARGET_IDS = DOMAIN_IDS + SUB_SIGNAL_IDS
-ALERT_RULES = ("TWO_CONSECUTIVE", "SINGLE", "CUSUM")
+ALERT_RULES = ("THREE_CONSECUTIVE", "TWO_CONSECUTIVE", "SINGLE", "CUSUM")
 STATUSES = ("stable", "watch", "decline", "improving")
 
 
@@ -62,7 +62,7 @@ class ScoringConfig:
     decline_velocity: float = -1.5
     watch_velocity: float = -0.8
     improving_velocity: float = 1.0
-    alert_rule: str = "TWO_CONSECUTIVE"
+    alert_rule: str = "THREE_CONSECUTIVE"
     cusum_k: float = 0.5
     cusum_h: float = 4.0
 
@@ -202,6 +202,12 @@ def alert_for(state: TargetState, velocity: float, config: ScoringConfig = DEFAU
         if velocity <= config.decline_velocity:
             return "decline"
         if velocity <= config.watch_velocity:
+            return "watch"
+        return None
+    if rule == "THREE_CONSECUTIVE":
+        if state.run_decline >= 3:
+            return "decline"
+        if state.run_watch >= 3:
             return "watch"
         return None
     if rule == "TWO_CONSECUTIVE":

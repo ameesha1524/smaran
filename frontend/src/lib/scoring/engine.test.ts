@@ -114,11 +114,25 @@ describe('status and gating', () => {
 describe('alert rules', () => {
   const stableThenLow = [70, 71, 69, 70, 72, 68, 70, 71, 69, 70, 71, 70, 45, 46, 44]
 
-  it('TWO_CONSECUTIVE needs two in a row', () => {
+  it('THREE_CONSECUTIVE (the default) needs three in a row', () => {
     const out = replayReadings(stableThenLow)
     expect(out[12].status).toBe('decline')
     expect(out[12].alert).toBeNull()
+    expect(out[13].alert).toBeNull()
+    expect(out[14].alert).toBe('decline')
+  })
+
+  it('TWO_CONSECUTIVE needs two in a row', () => {
+    const out = replayReadings(stableThenLow, { ...DEFAULT_CONFIG, alertRule: 'TWO_CONSECUTIVE' })
+    expect(out[12].status).toBe('decline')
+    expect(out[12].alert).toBeNull()
     expect(out[13].alert).toBe('decline')
+  })
+
+  it('two low sessions and then a normal one raise nothing under THREE_CONSECUTIVE', () => {
+    const out = replayReadings([70, 71, 69, 70, 72, 68, 70, 71, 69, 70, 71, 70, 45, 46, 70, 71])
+    expect(out[13].status).toBe('decline')
+    expect(out.every((r) => r.alert === null)).toBe(true)
   })
 
   it('SINGLE fires on the first', () => {
@@ -127,7 +141,7 @@ describe('alert rules', () => {
   })
 
   it('one bad day does not alert under TWO_CONSECUTIVE, and the run resets', () => {
-    const out = replayReadings([70, 71, 69, 70, 72, 68, 70, 71, 69, 40, 70, 71])
+    const out = replayReadings([70, 71, 69, 70, 72, 68, 70, 71, 69, 40, 70, 71], { ...DEFAULT_CONFIG, alertRule: 'TWO_CONSECUTIVE' })
     expect(out[9].status).toBe('decline')
     expect(out.every((r) => r.alert === null)).toBe(true)
   })

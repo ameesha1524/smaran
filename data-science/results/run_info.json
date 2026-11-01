@@ -11,20 +11,21 @@
   "matplotlib": "3.10.8",
   "statsmodels": "0.15.0",
   "seconds": {
-    "alert-rule comparison": 100.7,
-    "ablations": 208.4,
-    "reliability": 30.6,
-    "practice effects": 47.4,
-    "sensitivity to the assumptions": 138.2,
-    "sundowning": 15.3,
-    "clustering": 3.8,
-    "federated learning": 13.1
+    "alert-rule comparison": 106.0,
+    "ablations": 246.1,
+    "reliability": 49.8,
+    "practice effects": 66.1,
+    "sensitivity to the assumptions": 245.3,
+    "sundowning": 38.9,
+    "clustering": 4.8,
+    "federated learning": 29.8
   },
-  "total_seconds": 574.3,
+  "total_seconds": 787.0,
   "rule_names": {
     "R0": "Absolute level",
     "R1": "Single-session velocity",
     "R2": "Two-consecutive velocity",
-    "R3": "CUSUM"
+    "R3": "CUSUM",
+    "R4": "Three-consecutive velocity"
   }
 }

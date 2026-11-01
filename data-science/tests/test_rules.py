@@ -18,7 +18,7 @@ def cohort():
     return simulate.simulate(replace(SimParams(), n_patients=24, days=240))
 
 
-@pytest.mark.parametrize("rule,engine_rule", [("R1", "SINGLE"), ("R2", "TWO_CONSECUTIVE"), ("R3", "CUSUM")])
+@pytest.mark.parametrize("rule,engine_rule", [("R1", "SINGLE"), ("R2", "TWO_CONSECUTIVE"), ("R3", "CUSUM"), ("R4", "THREE_CONSECUTIVE")])
 @pytest.mark.parametrize("gate", [0.35, 0.0])
 def test_default_threshold_fires_where_the_engine_alerts(cohort, rule, engine_rule, gate):
     cfg = sc.DEFAULT_CONFIG.with_(alert_rule=engine_rule, confidence_gate=gate)

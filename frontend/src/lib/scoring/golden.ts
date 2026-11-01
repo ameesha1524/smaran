@@ -132,8 +132,14 @@ const SPECS: CaseSpec[] = [
     contributions: [one('EXECUTIVE', 70), one('EXECUTIVE', 72), one('EXECUTIVE', 20), one('EXECUTIVE', 18)],
   },
   {
+    name: 'three-consecutive-decline',
+    about: 'Stable around 70, then a sustained fall, under the default rule: the first two low readings are `decline` but raise nothing; the third raises the alert.',
+    contributions: series(11, 16, (i, e) => (i < 12 ? 70 + 4 * e : 45 + 4 * e), 'EXECUTIVE'),
+  },
+  {
     name: 'two-consecutive-decline',
-    about: 'Stable around 70, then a sustained fall. The first low reading is `decline` but raises nothing; the second raises the alert.',
+    about: 'The same series under TWO_CONSECUTIVE (the default until 2026-10-31): the second low reading raises the alert.',
+    config: { alertRule: 'TWO_CONSECUTIVE' },
     contributions: series(11, 16, (i, e) => (i < 12 ? 70 + 4 * e : 45 + 4 * e), 'EXECUTIVE'),
   },
   {

@@ -18,7 +18,7 @@ import scoring_core as sc
 from common import COLORS, N_BOOT, fig_meta, get_cohort, params_from_env, save_figure, save_table
 from replay import SequenceIndex, replay_frame
 
-DECLINE_THRESHOLD = {"R0": -30.0, "R1": 1.5, "R2": 1.5, "R3": 4.0}  # the engine's "decline" level, and level <= 30
+DECLINE_THRESHOLD = {"R0": -30.0, "R1": 1.5, "R2": 1.5, "R3": 4.0, "R4": 1.5}  # the engine's "decline" level, and level <= 30
 FAR_TARGETS = (0.5, 1.0, 2.0, 4.0, 8.0)  # false alarms per patient-year
 
 

@@ -41,8 +41,8 @@ import org.springframework.web.server.ResponseStatusException;
  * adds a second one. That is what "idempotent" means here, and the database
  * enforces it with a unique index on the open row.
  *
- * <b>DOMAIN_DECLINE</b> follows the configured rule (TWO_CONSECUTIVE by default,
- * SINGLE or CUSUM), with confidence gating: until a domain has enough readings
+ * <b>DOMAIN_DECLINE</b> follows the configured rule (THREE_CONSECUTIVE by default,
+ * TWO_CONSECUTIVE, SINGLE or CUSUM), with confidence gating: until a domain has enough readings
  * to trust (domain confidence 0.35), nothing is raised. The engine decides;
  * this class records.
  *
@@ -141,7 +141,7 @@ public class AlertService {
         String pattern = switch (rule) {
             case CUSUM -> "have drifted down steadily over recent sessions";
             case SINGLE -> "were lower than her own usual in her latest session";
-            case TWO_CONSECUTIVE -> run >= 2
+            case THREE_CONSECUTIVE, TWO_CONSECUTIVE -> run >= 2
                     ? "have been %s her own usual for %d sessions in a row".formatted(
                             "decline".equals(severity) ? "well below" : "below", run)
                     : "were below her own usual in her latest sessions";

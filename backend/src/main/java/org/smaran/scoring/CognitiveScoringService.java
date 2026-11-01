@@ -39,7 +39,7 @@ public class CognitiveScoringService {
 
     public CognitiveScoringService(
             ObjectMapper json,
-            @Value("${smaran.scoring.alert-rule:TWO_CONSECUTIVE}") AlertRule alertRule,
+            @Value("${smaran.scoring.alert-rule:THREE_CONSECUTIVE}") AlertRule alertRule,
             @Value("${smaran.scoring.cusum-k:0.5}") double cusumK,
             @Value("${smaran.scoring.cusum-h:4}") double cusumH) {
         this.json = json;
